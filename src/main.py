@@ -1,6 +1,7 @@
 import os
 from flask import Flask
 import config
+from util import KVSDistributor
 
 app = Flask(__name__)
 
