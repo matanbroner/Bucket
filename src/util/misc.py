@@ -25,4 +25,10 @@ def request(
     """
     url = "http://" + url
     headers.update({"Content-Type": "application/json"})
-    return requests.request(method=method, url=url, headers=headers, json=json)
+    return requests.request(
+        method=method, url=url, headers=headers, json=json, timeout=3
+    )
+
+
+def status_code_success(status_code: int):
+    return status_code >= 200 and status_code <= 300
