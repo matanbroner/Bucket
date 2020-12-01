@@ -70,6 +70,22 @@ def accept_shard():
     return 200
 
 
+@kvs_router.route("/gossip", methods=["PUT"])
+def accept_shard():
+    """Absorb gossip from another node
+
+    JSON:
+        kvs (dict): key-value pairs to absorb
+
+    Returns:
+        tuple: json, status code
+    """
+    json = request.get_json()
+    shard = json.get("kvs")
+    kvs_distributor.merge_gossip(shard)
+    return 200
+
+
 @kvs_router.route("/key-count", methods=["GET"])
 def key_count():
     """Get number of keys in KVS

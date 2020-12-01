@@ -5,6 +5,7 @@ import requests
 from util.kvs import KVS
 from util.view import View
 from util.misc import request, printer, status_code_success
+from util.scheduler import Scheduler
 
 from constants.errors import (
     INVALID_CAUSAL_CONTEXT,
@@ -15,11 +16,17 @@ from constants.errors import (
 from constants.messages import GET_SUCCESS, PUT_NEW_SUCCESS, PUT_UPDATE_SUCCESS
 from constants.responses import GetResponse, PutResponse
 
+GOSSIP_INTERVAL = 3
+
 
 class KVSDistributor:
     def __init__(self, ips: list, address: str, repl_factor: int):
         self.view = View(ips, address, repl_factor)
         self.kvs = KVS()
+        # schedule repeated gossip in bucket
+        Scheduler.add_job(
+            function=self._send_gossip, seconds=GOSSIP_INTERVAL, verbose=True
+        )
 
     # Private Functions
 
@@ -158,7 +165,17 @@ class KVSDistributor:
         """
         return isinstance(key, str) and len(key) <= 50
 
+    def _send_gossip(self):
+        bucket = self.view.self_replication_bucket(own_ip=False)
+        url = "/kvs/gossip"
+        json = {"kvs": self.kvs.json()}
+        self._request_multiple_ips(ips=bucket, url=url, method="POST", json=json)
+
     # Public Functions
+
+    def merge_gossip(self, shard: dict):
+        kvs_dict = self.kvs.json()
+        self.kvs = self.kvs.combine_conflicting_shards(kvs_dict, shard)
 
     def change_view(self, ips: list, repl_factor: int, propagate: bool = False) -> dict:
         """Public interface for a view change
@@ -328,7 +345,7 @@ class KVSDistributor:
                     message=PUT_UPDATE_SUCCESS,
                 )
             else:
-                # inserty key-value
+                # insert key-value
                 self.kvs.insert(key, value)
                 return PutResponse(
                     status_code=201,
