@@ -24,11 +24,12 @@ class KVSDistributor:
         self.view = View(ips, address, repl_factor)
         self.kvs = KVS()
         # schedule repeated gossip in bucket
-        Scheduler.add_job(
-            function=self._send_gossip,
-            seconds=GOSSIP_INTERVAL,
-            id="send_gossip",
-        )
+        if repl_factor > 1:
+            Scheduler.add_job(
+                function=self._send_gossip,
+                seconds=GOSSIP_INTERVAL,
+                id="send_gossip",
+            )
 
     # Private Functions
 
