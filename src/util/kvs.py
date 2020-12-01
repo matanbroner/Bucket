@@ -79,7 +79,7 @@ class KVS:
         entry = self.kvs.get(key, None)
         if not entry:
             return 1
-        if entry["timestamp"] > timestamp:
+        if entry["timestamp"] >= timestamp:
             return -1
         else:
             return 1
