@@ -137,4 +137,5 @@ class PutResponse(typing.NamedTuple):
             context=context,
             address=address,
             message=message,
+            error=error,
         )
