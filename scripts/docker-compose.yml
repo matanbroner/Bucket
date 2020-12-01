@@ -1,0 +1,63 @@
+version: "3"
+services:
+  node1:
+    build: ../
+    ports:
+      - "13800:13800"
+    environment:
+      FLASK_DEBUG: 1
+      VIEW: "10.10.0.2:13800,10.10.0.3:13800,10.10.0.4:13800,10.10.0.5:13800"
+      ADDRESS: "10.10.0.2:13800"
+      REPL_FACTOR: 2
+    networks:
+      kv_subnet:
+        ipv4_address: 10.10.0.2
+    volumes: ["../src:/app"]
+
+  node2:
+    build: ../
+    ports:
+      - "13801:13800"
+    environment:
+      FLASK_DEBUG: 1
+      VIEW: "10.10.0.2:13800,10.10.0.3:13800,10.10.0.4:13800,10.10.0.5:13800"
+      ADDRESS: "10.10.0.3:13800"
+      REPL_FACTOR: 2
+    networks:
+      kv_subnet:
+        ipv4_address: 10.10.0.3
+    volumes: ["../src:/app"]
+
+  node3:
+    build: ../
+    ports:
+      - "13802:13800"
+    environment:
+      FLASK_DEBUG: 1
+      VIEW: "10.10.0.2:13800,10.10.0.3:13800,10.10.0.4:13800,10.10.0.5:13800"
+      ADDRESS: "10.10.0.4:13800"
+      REPL_FACTOR: 2
+    networks:
+      kv_subnet:
+        ipv4_address: 10.10.0.4
+    volumes: ["../src:/app"]
+
+  node4:
+    build: ../
+    ports:
+      - "13803:13800"
+    environment:
+      FLASK_DEBUG: 1
+      VIEW: "10.10.0.2:13800,10.10.0.3:13800,10.10.0.4:13800,10.10.0.5:13800"
+      ADDRESS: "10.10.0.5:13800"
+      REPL_FACTOR: 2
+    networks:
+      kv_subnet:
+        ipv4_address: 10.10.0.5
+    volumes: ["../src:/app"]
+
+networks:
+  kv_subnet:
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16

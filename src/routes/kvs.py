@@ -67,7 +67,24 @@ def accept_shard():
     json = request.get_json()
     shard = json.get("kvs")
     kvs_distributor.merge_shard(shard)
-    return 200
+    return "Success", 200
+
+
+@kvs_router.route("/gossip", methods=["PUT"])
+def accept_gossip():
+    """Absorb gossip from another node
+
+    JSON:
+        kvs (dict): key-value pairs to absorb
+
+    Returns:
+        tuple: json, status code
+    """
+    printer("Got gossip")
+    json = request.get_json()
+    shard = json.get("kvs")
+    kvs_distributor.merge_gossip(shard)
+    return "Success", 200
 
 
 @kvs_router.route("/key-count", methods=["GET"])
@@ -102,6 +119,8 @@ def dynamic_key_route(key):
         res = kvs_distributor.get(key, context)
     elif request.method == "PUT":
         res = kvs_distributor.put(key, json.get("value"), context)
+
+    printer(res.__dict__)
     return res.to_flask_response(include_address=res.address != address)
 
 

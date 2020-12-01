@@ -19,7 +19,7 @@ class View:
             for x in range(0, len(self.all_ips), self.repl_factor)
         ]
         for index, bucket in enumerate(self.buckets):
-            if bucket.index(self.address) != -1:
+            if self.address in bucket:
                 self.bucket_index = index
                 break
 
@@ -45,14 +45,6 @@ class View:
         """
         return index == self.bucket_index
 
-    def node_is_replica_leader(self) -> bool:
-        """Determine if node is replica bucket leader
-
-        Returns:
-            bool
-        """
-        return self.buckets[self.bucket_index][0] == self.address
-
     def self_replication_bucket(self, own_ip: bool = True) -> list:
         """Get the IP addresses in a node's own replication bucket
 
@@ -64,22 +56,5 @@ class View:
         """
         bucket = self.buckets[self.bucket_index]
         if not own_ip:
-            bucket = bucket.filter(lambda ip: ip != self.address, bucket)
-        return bucket
-
-    def bucket_leaders(self, own_leader: bool = False) -> list:
-        """Get a list of replica leaders for easier communication in proxied requests.
-            Leaders are defaultred as the first IP in any given bucket.
-
-        Args:
-            own_leader (bool, optional): Return node's own replica bucket leader. Defaults to False.
-
-        Returns:
-            list: IP addresses of all leaders
-        """
-        leaders = [bucket[0] for index, bucket in enumerate(self.buckets)]
-        if not own_leader:
-            leaders = leaders.filter(
-                lambda ip: ip != self.buckets[self.bucket_index][0], leaders
-            )
-        return leaders
+            bucket = filter(lambda ip: ip != self.address, bucket)
+        return list(bucket)

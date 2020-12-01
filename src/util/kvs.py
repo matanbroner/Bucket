@@ -6,7 +6,7 @@ class KVS:
         self.kvs = kvs
 
     def __iter__(self):
-        return self.kvs
+        return iter(self.kvs.items())
 
     def __len__(self):
         return len(self.kvs)
