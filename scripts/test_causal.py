@@ -29,7 +29,7 @@ class causal_test(unittest.TestCase):
                             headers = {"Content-Type": "application/json"}) 
     
     def test_causal_1(self):
-        
+        response = self.put_request("13801","x","0","")
         # Write X to R1
         response = self.put_request("13801","x","1","")
         contents = response.json()
@@ -46,6 +46,7 @@ class causal_test(unittest.TestCase):
      
 
     def test_causal_2(self):
+        response = self.put_request("13801","y","0","")
         # Write X to R1
         response = self.put_request("13801","y","1","")
         contents = response.json()
