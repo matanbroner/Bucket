@@ -45,11 +45,14 @@ class GetResponse(typing.NamedTuple):
         return json, self.status_code
 
     @classmethod
-    def from_flask_response(cls, response: requests.Response):
+    def from_flask_response(
+        cls, response: requests.Response, manual_address: str = None
+    ):
         """Generate response instance from a Flask request.Response instance
 
         Args:
             response (requests.Response)
+            manual_address (str): address of responder
 
         Returns:
             GetResponse
@@ -59,7 +62,7 @@ class GetResponse(typing.NamedTuple):
         value, context, address, message, error = (
             json.get("value"),
             json.get("causal-context"),
-            json.get("address"),
+            json.get("address") or manual_address,
             json.get("message"),
             json.get("error"),
         )
@@ -109,11 +112,14 @@ class PutResponse(typing.NamedTuple):
         return json, self.status_code
 
     @classmethod
-    def from_flask_response(cls, response: requests.Response):
+    def from_flask_response(
+        cls, response: requests.Response, manual_address: str = None
+    ):
         """Generate response instance from a Flask request.Response instance
 
         Args:
             response (requests.Response)
+            manual_address (str): address of responder
 
         Returns:
             PutResponse
@@ -122,7 +128,7 @@ class PutResponse(typing.NamedTuple):
         json = response.json()
         context, address, message, error = (
             json.get("causal-context"),
-            json.get("address"),
+            json.get("address") or manual_address,
             json.get("message"),
             json.get("error"),
         )
@@ -131,4 +137,5 @@ class PutResponse(typing.NamedTuple):
             context=context,
             address=address,
             message=message,
+            error=error,
         )

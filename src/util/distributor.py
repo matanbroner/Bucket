@@ -24,11 +24,12 @@ class KVSDistributor:
         self.view = View(ips, address, repl_factor)
         self.kvs = KVS()
         # schedule repeated gossip in bucket
-        Scheduler.add_job(
-            function=self._send_gossip,
-            seconds=GOSSIP_INTERVAL,
-            id="send_gossip",
-        )
+        if repl_factor > 1:
+            Scheduler.add_job(
+                function=self._send_gossip,
+                seconds=GOSSIP_INTERVAL,
+                id="send_gossip",
+            )
 
     # Private Functions
 
@@ -65,7 +66,7 @@ class KVSDistributor:
 
     def _request_bucket(
         self, bucket: list, url: str, method: str, headers: dict = {}, json={}
-    ) -> requests.Response:
+    ) -> tuple:
         """Request nodes in a bucket until a valid response is returned
 
         Args:
@@ -76,19 +77,19 @@ class KVSDistributor:
             json (dict, optional) . Defaults to {}.
 
         Returns:
-            requests.Response
+            tuple: requests.Response, IP of request
         """
         for ip in bucket:
             try:
                 url_complete = ip + url
                 response = request(url_complete, method, headers, json)
                 if response.status_code != 500:
-                    return response
+                    return response, ip
             except requests.exceptions.ConnectionError:
                 pass
         # Entire bucket is down
         # TODO: Figure out if this use case needs to be handled...
-        return None
+        return None, None
 
     def _causal_context_ahead(self, key: str, context: dict = {}) -> bool:
         """Check if given causal context is ahead of local KVS for a given key
@@ -174,7 +175,6 @@ class KVSDistributor:
 
     def _send_gossip(self):
         bucket = self.view.self_replication_bucket(own_ip=False)
-        printer(f"Sending gossip to [{bucket}]")
         url = "/kvs/gossip"
         json = {"kvs": self.kvs.json()}
         self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
@@ -300,11 +300,13 @@ class KVSDistributor:
             bucket = self.view.buckets[bucket_index]
             url = f"/kvs/keys/{key}"
             json = {"causal-context": context}
-            proxy_response = self._request_bucket(
+            proxy_response, ip = self._request_bucket(
                 bucket=bucket, url=url, method="GET", json=json
             )
-            if proxy_response:
-                return GetResponse.from_flask_response(proxy_response)
+            if proxy_response != None:
+                return GetResponse.from_flask_response(
+                    proxy_response, manual_address=ip
+                )
             # if entire bucket fails to respond, unlikely use case
             return GetResponse(
                 status_code=503,
@@ -367,15 +369,16 @@ class KVSDistributor:
             bucket = self.view.buckets[bucket_index]
             url = f"/kvs/keys/{key}"
             json = {"causal-context": context, "value": value}
-            proxy_response = self._request_bucket(
+            proxy_response, ip = self._request_bucket(
                 bucket=bucket, url=url, method="PUT", json=json
             )
-            if proxy_response:
-                return PutResponse.from_flask_response(proxy_response)
+            if proxy_response != None:
+                return PutResponse.from_flask_response(
+                    proxy_response, manual_address=ip
+                )
             # if entire bucket fails to respond, unlikely use case
             return PutResponse(
                 status_code=503,
-                value=None,
                 context=context,
                 address=self.view.address,
                 error=INVALID_CAUSAL_CONTEXT,

@@ -80,7 +80,6 @@ def accept_gossip():
     Returns:
         tuple: json, status code
     """
-    printer("Got gossip")
     json = request.get_json()
     shard = json.get("kvs")
     kvs_distributor.merge_gossip(shard)
@@ -120,7 +119,7 @@ def dynamic_key_route(key):
     elif request.method == "PUT":
         res = kvs_distributor.put(key, json.get("value"), context)
 
-    printer(res.__dict__)
+    printer(res._asdict())
     return res.to_flask_response(include_address=res.address != address)
 
 

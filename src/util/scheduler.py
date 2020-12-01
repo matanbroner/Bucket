@@ -10,6 +10,7 @@ scheduler.start()
 
 class Scheduler:
     scheduler = scheduler
+    jobs = {}
 
     # Private Functions
 
@@ -48,16 +49,23 @@ class Scheduler:
         Returns:
             str: [description]
         """
-        printer("In add job")
         if not id:
             id = cls._job_id()
+
+        if id in cls.jobs:
+            cls[jobs][id].remove()
+            del cls[jobs][id]
 
         def job_wrapper():
             return_value = function(*args)
             if removal_condition and removal_condition(return_value):
                 cls.scheduler.remove_job(id)
 
-        cls.scheduler.add_job(
-            job_wrapper, "interval", seconds=seconds, id=id, replace_existing=True
+        job = cls.scheduler.add_job(
+            job_wrapper,
+            "interval",
+            seconds=seconds,
+            id=id,
         )
+        cls.jobs[id] = job
         return id
