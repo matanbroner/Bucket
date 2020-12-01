@@ -8,6 +8,9 @@ class KVS:
     def __iter__(self):
         return self.kvs
 
+    def __len__(self):
+        return len(self.kvs)
+
     def clear(self):
         """Reset KVS"""
         self.kvs = {}
@@ -24,16 +27,16 @@ class KVS:
         """Return valueless causal context of each key in KVS
 
         Returns:
-            dict: key with dict value having keys "lamport" and "timestamp"
+            dict: key with dict value having keys and "timestamp"
         """
         return {
-            key: {"lamport": entry["lamport"], "timestamp": entry["timestamp"]}
-            for key, entry in self.kvs.items()
+            key: {"timestamp": entry["timestamp"]} for key, entry in self.kvs.items()
         }
 
-    def reset_context(self, key: str, timestamp: float = time.time()):
+    def reset_context(self, key: str, timestamp: float = None):
+        if not timestamp:
+            timestamp = time.time()
         if self.kvs.get(key):
-            self.kvs[key]["lamport"] = 0
             self.kvs[key]["timestamp"] = timestamp
 
     def get(self, key, default=None):
@@ -46,27 +49,25 @@ class KVS:
             key (str)
             value (str)
         """
-        self.kvs[key] = {"value": value, "lamport": 0, "timestamp": time.time()}
+        self.kvs[key] = {"value": value, "timestamp": time.time()}
 
-    def update(
-        self, key: str, value: str, lamport: int, timestamp: float = time.time()
-    ):
+    def update(self, key: str, value: str, timestamp: float = None):
         """Update KVS entry with new value and metadata
 
         Args:
             key (str)
             value (str)
-            lamport (int): updated lamport clock of entry
             timestamp (float, optional): [description]. Defaults to time.time().
         """
-        self.kvs[key] = {"value": value, "lamport": lamport, "timestamp": timestamp}
+        if not timestamp:
+            timestamp = time.time()
+        self.kvs[key] = {"value": value, "timestamp": timestamp}
 
-    def compare(self, key: str, lamport: int, timestamp: float) -> int:
+    def compare(self, key: str, timestamp: float) -> int:
         """Compares two KVS entries for a key to determine which is more recent
 
         Args:
             key (str)
-            lamport (int): lamport clock of entry
             timestamp (float): latest write timestamp of entry
 
         Returns:
@@ -77,27 +78,21 @@ class KVS:
         entry = self.kvs.get(key, None)
         if not entry:
             return 1
-        if entry["lamport"] >= lamport:
-            if entry["timestamp"] > timestamp:
-                return -1
-            else:
-                return 1
+        if entry["timestamp"] > timestamp:
+            return -1
         else:
-            if entry["timestamp"] < timestamp:
-                return 1
-            else:
-                return -1
+            return 1
 
     @classmethod
-    def combine_conflicting_shard(
+    def combine_conflicting_shards(
         cls, kvs_a: dict, kvs_b: dict, reset_clock: bool = False, as_dict: bool = True
-    ) -> KVS:
+    ):
         """Merges two shards (ie. dicts) which may have conflicting values for keys
 
         Args:
             kvs_a (dict)
             kvs_b (dict)
-            reset_clock (bool, optional): Reset the lamport clock and timestamp for each key in returned shard. Defaults to False.
+            reset_clock (bool, optional): Reset timestamp for each key in returned shard. Defaults to False.
             as_dict (bool, optional): return shard as dict rather than a new KVS instance. Defaults to True.
 
         Returns:
@@ -109,8 +104,8 @@ class KVS:
             # mitigate any conflicts between keys existing in both kvs's
             entry_a, entry_b = kvs_a.get(key), kvs_b.get(key)
             if entry_b:
-                lamport, timestamp = entry_b["lamport"], entry_b["timestamp"]
-                if kvs_a.compare(key, lamport, timestamp) == 1:
+                timestamp = entry_b["timestamp"]
+                if kvs_a.compare(key, timestamp) == 1:
                     kvs_a[key] = entry_b
                 if reset_clock:
                     kvs_a.reset_context(key, start_timestamp)
