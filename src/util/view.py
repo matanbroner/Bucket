@@ -19,7 +19,7 @@ class View:
             for x in range(0, len(self.all_ips), self.repl_factor)
         ]
         for index, bucket in enumerate(self.buckets):
-            if bucket.index(self.address) != -1:
+            if self.address in bucket:
                 self.bucket_index = index
                 break
 
@@ -57,4 +57,4 @@ class View:
         bucket = self.buckets[self.bucket_index]
         if not own_ip:
             bucket = filter(lambda ip: ip != self.address, bucket)
-        return bucket
+        return list(bucket)

@@ -10,4 +10,4 @@ app = Flask(__name__)
 app.register_blueprint(kvs_router, url_prefix="/kvs")
 
 if __name__ == "__main__":
-    app.run(port=config.PORT, host=config.HOST, debug=True, use_reloader=False)
+    app.run(port=config.PORT, host=config.HOST, debug=True)

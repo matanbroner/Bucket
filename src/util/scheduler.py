@@ -35,7 +35,7 @@ class Scheduler:
         seconds: int,
         args: list = [],
         removal_condition: callable = None,
-        verbose: bool = False,
+        id: str = None,
     ) -> str:
         """Add a scheduled job in the background
 
@@ -44,20 +44,20 @@ class Scheduler:
             args (list): list of arguments to pass function. Defaults to [].
             seconds (int): how often to run job
             removal_condition (callable, optional): function called to decide if to remove job based on return value. Must return bool. Defaults to None.
-            verbose (bool, optional). Defaults to False.
-
+            id (str, optional): manually set job ID. Defaults to None.
         Returns:
             str: [description]
         """
         printer("In add job")
-        job_id = cls._job_id()
+        if not id:
+            id = cls._job_id()
 
         def job_wrapper():
-            if verbose:
-                printer(f"Executing Job ID [{job_id}]")
             return_value = function(*args)
             if removal_condition and removal_condition(return_value):
-                cls.scheduler.remove_job(job_id)
+                cls.scheduler.remove_job(id)
 
-        cls.scheduler.add_job(job_wrapper, "interval", seconds=seconds, id=job_id)
-        return job_id
+        cls.scheduler.add_job(
+            job_wrapper, "interval", seconds=seconds, id=id, replace_existing=True
+        )
+        return id

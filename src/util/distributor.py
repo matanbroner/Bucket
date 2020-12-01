@@ -25,7 +25,9 @@ class KVSDistributor:
         self.kvs = KVS()
         # schedule repeated gossip in bucket
         Scheduler.add_job(
-            function=self._send_gossip, seconds=GOSSIP_INTERVAL, verbose=True
+            function=self._send_gossip,
+            seconds=GOSSIP_INTERVAL,
+            id="send_gossip",
         )
 
     # Private Functions
@@ -53,7 +55,12 @@ class KVSDistributor:
         for index, ip in enumerate(ips):
             if ip != self.view.address:
                 url_complete = ip + url
-                responses.append(request(url_complete, method, headers, json[index]))
+                try:
+                    responses.append(
+                        request(url_complete, method, headers, json[index])
+                    )
+                except requests.exceptions.ConnectionError:
+                    pass
         return responses
 
     def _request_bucket(
@@ -167,15 +174,16 @@ class KVSDistributor:
 
     def _send_gossip(self):
         bucket = self.view.self_replication_bucket(own_ip=False)
+        printer(f"Sending gossip to [{bucket}]")
         url = "/kvs/gossip"
         json = {"kvs": self.kvs.json()}
-        self._request_multiple_ips(ips=bucket, url=url, method="POST", json=json)
+        self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
 
     # Public Functions
 
     def merge_gossip(self, shard: dict):
         kvs_dict = self.kvs.json()
-        self.kvs = self.kvs.combine_conflicting_shards(kvs_dict, shard)
+        self.kvs = self.kvs.combine_conflicting_shards(kvs_dict, shard, as_dict=False)
 
     def change_view(self, ips: list, repl_factor: int, propagate: bool = False) -> dict:
         """Public interface for a view change
@@ -207,6 +215,7 @@ class KVSDistributor:
                 for response in self._request_multiple_ips(
                     ips=ips_union, url=url, method="PUT", json=json
                 )
+                if status_code_success(response.status_code)
             ]
             # use a mitigation function to combine all shards
             # this function will pick a more recent value in an identical key conflict

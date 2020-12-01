@@ -31,4 +31,5 @@ def request(
 
 
 def status_code_success(status_code: int):
+
     return status_code >= 200 and status_code <= 300
