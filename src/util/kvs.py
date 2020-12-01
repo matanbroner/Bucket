@@ -101,19 +101,10 @@ class KVS:
         """
         start_timestamp = time.time()
         kvs_a, kvs_b = cls(kvs_a), cls(kvs_b)
-        for key, _ in kvs_a:
+        for key, entry in kvs_b:
             # mitigate any conflicts between keys existing in both kvs's
-            entry_a, entry_b = kvs_a.get(key), kvs_b.get(key)
-            if entry_b:
-                timestamp = entry_b["timestamp"]
-                if kvs_a.compare(key, timestamp) == 1:
-                    kvs_a.kvs[key] = entry_b
-                if reset_clock:
-                    kvs_a.reset_context(key, start_timestamp)
-        kvs_b_exclusive = set(kvs_b.kvs.keys()) - set(kvs_a.kvs.keys())
-        for key in kvs_b_exclusive:
-            # add all keys exclusive to the second kvs
-            kvs_a.kvs[key] = kvs_b.kvs[key]
+            if kvs_a.compare(key, entry["timestamp"]) == 1:
+                kvs_a.kvs[key] = entry
             if reset_clock:
                 kvs_a.reset_context(key, start_timestamp)
         return kvs_a.json() if as_dict else kvs_a
