@@ -30,11 +30,27 @@ def request(
     )
 
 
-def status_code_success(status_code: int):
+def status_code_success(status_code: int) -> bool:
+    """Determine if status code is a successful one
+
+    Args:
+        status_code (int)
+
+    Returns:
+        bool
+    """
     return status_code >= 200 and status_code <= 300
 
 
 def get_request_first_success(responses: list) -> tuple:
+    """Returns response and IP of response in list with lowest status code
+
+    Args:
+        responses (list): tuples with structure (response, IP address of response origin)
+
+    Returns:
+        tuple: response, IP address
+    """
     min_status_response = None, None
     for response, ip in responses:
         if (
@@ -46,6 +62,14 @@ def get_request_first_success(responses: list) -> tuple:
 
 
 def key_count_max(responses: list) -> int:
+    """Allows for fetching the maximum key count in a set of responses (to mitigate gossip lag)
+
+    Args:
+        responses (list): tuples with structure (response, IP address of response origin)
+
+    Returns:
+        int: max key count
+    """
     max_count = 0
     for response, _ in responses:
         json = response.json() or {}

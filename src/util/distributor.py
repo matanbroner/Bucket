@@ -26,6 +26,14 @@ GOSSIP_INTERVAL = 3
 
 
 class KVSDistributor:
+    """Distributor of underlying KVS structure for multiple replicated shards
+
+    Args:
+        ips (list): list of IP addresses in current view
+        address (str): IP address of node
+        repl_factor (int): replication factor of shards
+    """
+
     def __init__(self, ips: list, address: str, repl_factor: int):
         self.view = View(ips, address, repl_factor)
         self.kvs = KVS()
@@ -52,7 +60,7 @@ class KVSDistributor:
             json (list/dict, optional). Allows for unique json to each ip (list) or identical json (dict). Defaults to None.
 
         Returns:
-            list: results of each request
+            list: tuples with each item being of type (response, IP address of response origin)
         """
         if not json:
             json = [{} for ip in ips]  # default empty json
@@ -188,6 +196,11 @@ class KVSDistributor:
     # Public Functions
 
     def merge_gossip(self, shard: dict):
+        """Accepts gossip from replicas in same bucket
+
+        Args:
+            shard (dict): key-value structure
+        """
         kvs_dict = self.kvs.json()
         self.kvs = self.kvs.combine_conflicting_shards(kvs_dict, shard, as_dict=False)
 

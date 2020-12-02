@@ -7,6 +7,8 @@ from constants.responses import (
     key_count_response,
     all_shards_info_response,
     single_shard_info_response,
+    success_response,
+    view_change_response,
 )
 from util.misc import printer
 
@@ -56,7 +58,7 @@ def client_view_change():
     template = kvs_distributor.change_view(
         ips=view, repl_factor=repl_factor, propogate=True
     )
-    return {"shards": template}, 200
+    return view_change_response(template=template)
 
 
 @kvs_router.route("/shard", methods=["PUT"])
@@ -72,7 +74,7 @@ def accept_shard():
     json = request.get_json()
     shard = json.get("kvs")
     kvs_distributor.merge_shard(shard)
-    return "Success", 200
+    return success_response()
 
 
 @kvs_router.route("/gossip", methods=["PUT"])
@@ -88,7 +90,7 @@ def accept_gossip():
     json = request.get_json()
     shard = json.get("kvs")
     kvs_distributor.merge_gossip(shard)
-    return "Success", 200
+    return success_response()
 
 
 @kvs_router.route("/key-count", methods=["GET"])
@@ -106,6 +108,14 @@ def key_count():
 @kvs_router.route("/shards/", defaults={"shard_id": None})
 @kvs_router.route("/shards/<shard_id>")
 def shard_info(shard_id):
+    """Generic route allowing for retrieval of all shards' info or single shard info
+
+    Args:
+        shard_id (int, optional): ID of shard if single shard info call. Defaults to None.
+
+    Returns:
+        [type]: [description]
+    """
     if shard_id:
         shard_id = int(shard_id)
         key_count = kvs_distributor.key_count(bucket_index=shard_id)
