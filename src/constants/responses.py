@@ -3,6 +3,77 @@ import requests
 from util.misc import status_code_success
 
 
+def success_response(msg: str = "Success") -> tuple:
+    """Generic success response
+
+    Args:
+        msg (str, optional). Defaults to "Success".
+
+    Returns:
+        tuple: message, status code
+    """
+    return msg, 200
+
+
+def key_count_response(count: int, shard_id: int) -> tuple:
+    """Response from call to /kvs/key-count
+
+    Args:
+        count (int): key count
+        shard_id (int)
+
+    Returns:
+        tuple: json, status code
+    """
+    return {
+        "message": "Key count retrieved successfully",
+        "key-count": count,
+        "shard-id": shard_id,
+    }, 200
+
+
+def all_shards_info_response(shards: list) -> tuple:
+    """Response from call to /kvs/shards
+
+    Args:
+        shards (list): list of shard ID's
+    Returns:
+        tuple: json, status code
+    """
+    return {"message": "Shard membership retrieved successfully", "shards": shards}, 200
+
+
+def single_shard_info_response(count: int, shard_id: int, replicas: list) -> tuple:
+    """Response from call to /kvs/shards/{id}
+
+    Args:
+        count (int): key count
+        shard_id (int)
+        replicas (list): list of IP's in shard
+
+    Returns:
+        tuple: json, status code
+    """
+    return {
+        "message": "Shard information retrieved successfully",
+        "shard-id": shard_id,
+        "key-count": count,
+        "replicas": replicas,
+    }
+
+
+def view_change_response(template: dict):
+    """Response from call to /kvs/view-change
+
+    Args:
+        template (dict)
+
+    Returns:
+        tuple: json, status code
+    """
+    return {"shards": template}, 200
+
+
 class GetResponse(typing.NamedTuple):
     """
     Response interface for GET requests
@@ -72,6 +143,7 @@ class GetResponse(typing.NamedTuple):
             context=context,
             address=address,
             message=message,
+            error=error,
         )
 
 
