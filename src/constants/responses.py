@@ -3,6 +3,27 @@ import requests
 from util.misc import status_code_success
 
 
+def key_count_response(count: int, shard_id: int) -> tuple:
+    return {
+        "message": "Key count retrieved successfully",
+        "key-count": count,
+        "shard-id": shard_id,
+    }, 200
+
+
+def all_shards_info_response(shards: list) -> tuple:
+    return {"message": "Shard membership retrieved successfully", "shards": shards}, 200
+
+
+def single_shard_info_response(count: int, shard_id: int, replicas: list) -> tuple:
+    return {
+        "message": "Shard information retrieved successfully",
+        "shard-id": shard_id,
+        "key-count": count,
+        "replicas": replicas,
+    }
+
+
 class GetResponse(typing.NamedTuple):
     """
     Response interface for GET requests
@@ -72,6 +93,7 @@ class GetResponse(typing.NamedTuple):
             context=context,
             address=address,
             message=message,
+            error=error,
         )
 
 

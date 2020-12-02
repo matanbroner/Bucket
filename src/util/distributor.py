@@ -4,7 +4,13 @@ import requests
 
 from util.kvs import KVS
 from util.view import View
-from util.misc import request, printer, status_code_success
+from util.misc import (
+    request,
+    printer,
+    status_code_success,
+    get_request_first_success,
+    key_count_max,
+)
 from util.scheduler import Scheduler
 
 from constants.errors import (
@@ -58,7 +64,7 @@ class KVSDistributor:
                 url_complete = ip + url
                 try:
                     responses.append(
-                        request(url_complete, method, headers, json[index])
+                        (request(url_complete, method, headers, json[index]), ip)
                     )
                 except requests.exceptions.ConnectionError:
                     pass
@@ -212,7 +218,7 @@ class KVSDistributor:
             json = {"view": ips, "repl-factor": repl_factor}
             shards = [
                 response.json().get("kvs")
-                for response in self._request_multiple_ips(
+                for response, _ in self._request_multiple_ips(
                     ips=ips_union, url=url, method="PUT", json=json
                 )
                 if status_code_success(response.status_code)
@@ -247,13 +253,45 @@ class KVSDistributor:
         """
         self.kvs = KVS(shard)
 
-    def key_count(self) -> int:
+    def key_count(self, bucket_index: int = None) -> int:
         """Returns number of keys in KVS
+        Args:
+            bucket_index (int): shard ID for key count. Defaults to None (ie. own shard ID)
+        Returns:
+            int
+        """
+        if bucket_index == None or bucket_index == self.view.bucket_index:
+            return len(self.kvs.json())
+        else:
+            url = "/kvs/key-count"
+            bucket = self.view.buckets[bucket_index]
+            responses = self._request_multiple_ips(ips=bucket, url=url, method="GET")
+            return key_count_max(responses)
+
+    def shard_id(self) -> int:
+        """Return shard ID of own node
 
         Returns:
             int
         """
-        return len(self.kvs)
+        return self.view.bucket_index
+
+    def bucket(self, id: int = None) -> list:
+        """Abstraction of View's self_replication_bucket
+
+        Returns:
+            list: all IP addresses in node's bucket
+        """
+        id = self.view.bucket_index if id == None else id
+        return self.view.buckets[id]
+
+    def all_bucket_ids(self) -> list:
+        """Return ID's of all buckets
+
+        Returns:
+            list
+        """
+        return [id for id, _ in enumerate(self.view.buckets)]
 
     def get(self, key: str, context: str = {}) -> GetResponse:
         """Public interface for completing GET requests
@@ -300,12 +338,14 @@ class KVSDistributor:
             bucket = self.view.buckets[bucket_index]
             url = f"/kvs/keys/{key}"
             json = {"causal-context": context}
-            proxy_response, ip = self._request_bucket(
-                bucket=bucket, url=url, method="GET", json=json
+            responses = self._request_multiple_ips(
+                ips=bucket, url=url, method="GET", json=json
             )
-            if proxy_response != None:
+            # ensures that a 200 can be obtained even if not all replicas have a value yet
+            best_reponse = get_request_first_success(responses)
+            if best_reponse[0] != None:
                 return GetResponse.from_flask_response(
-                    proxy_response, manual_address=ip
+                    best_reponse[0], manual_address=best_reponse[1]
                 )
             # if entire bucket fails to respond, unlikely use case
             return GetResponse(

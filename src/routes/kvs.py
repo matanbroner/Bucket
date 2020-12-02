@@ -3,6 +3,11 @@ import sys
 import requests
 from flask import Blueprint, jsonify, request
 from util.distributor import KVSDistributor
+from constants.responses import (
+    key_count_response,
+    all_shards_info_response,
+    single_shard_info_response,
+)
 from util.misc import printer
 
 address = os.getenv("ADDRESS")
@@ -94,7 +99,21 @@ def key_count():
         tuple: json, status code
     """
     count = kvs_distributor.key_count()
-    return count, 200
+    id = kvs_distributor.shard_id()
+    return key_count_response(count, id)
+
+
+@kvs_router.route("/shards/", defaults={"shard_id": None})
+@kvs_router.route("/shards/<shard_id>")
+def shard_info(shard_id):
+    if shard_id:
+        shard_id = int(shard_id)
+        key_count = kvs_distributor.key_count(bucket_index=shard_id)
+        replicas = kvs_distributor.bucket(id=shard_id)
+        return single_shard_info_response(key_count, shard_id, replicas)
+    else:
+        all_shards = kvs_distributor.all_bucket_ids()
+        return all_shards_info_response(all_shards)
 
 
 @kvs_router.route("/keys/<key>", methods=["GET", "PUT", "DELETE"])
@@ -111,7 +130,7 @@ def dynamic_key_route(key):
         tuple: json, status code
     """
     global address
-    json = request.get_json()
+    json = request.get_json() or {}
     context = json.get("causal-context", {})
     res = None
     if request.method == "GET":
@@ -119,7 +138,6 @@ def dynamic_key_route(key):
     elif request.method == "PUT":
         res = kvs_distributor.put(key, json.get("value"), context)
 
-    printer(res._asdict())
     return res.to_flask_response(include_address=res.address != address)
 
 
