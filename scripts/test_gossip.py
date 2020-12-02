@@ -31,13 +31,6 @@ class causal_test(unittest.TestCase):
             json={"causal-context": context},
             headers={"Content-Type": "application/json"},
         )
-    def get_allkeys(self, port):
-        return requests.get(
-            "http://localhost:%s/kvs/shards/0" % (port),
-            json={},
-            headers={"Content-Type": "application/json"},
-        )
-
 
     def test_gossip_1(self):
         response = self.put_request("13804", "x", "0", "{}")
@@ -114,10 +107,6 @@ class causal_test(unittest.TestCase):
         self.assertEqual(contents["doesExist"], True)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(contents["value"],"3")
-
-    def test_func(self):
-        resp=self.get_allkeys("13801")
-        print(resp.json())
 
 if __name__ == "__main__":
     unittest.main()
