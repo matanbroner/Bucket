@@ -52,6 +52,7 @@ class Scheduler:
         if not id:
             id = cls._job_id()
 
+        # remove job first if ID already associated
         if id in cls.jobs:
             cls[jobs][id].remove()
             del cls[jobs][id]
@@ -69,3 +70,9 @@ class Scheduler:
         )
         cls.jobs[id] = job
         return id
+
+    @classmethod
+    def clear_jobs(cls):
+        for job_id in cls.jobs:
+            cls.jobs[job_id].remove()
+        cls.jobs = {}

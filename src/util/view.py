@@ -8,8 +8,12 @@ class View:
 
     def _test_class_inputs_valid(self):
         """Validates view inputs"""
-        assert self.address in self.all_ips
-        assert len(self.all_ips) % self.repl_factor == 0
+        try:
+            assert (
+                len(self.all_ips) % self.repl_factor == 0
+            ), f"Length of view {self.all_ips} not divisible by {self.repl_factor}"
+        except AssertionError:
+            raise
 
     def _create_buckets(self):
         """Designates a set of replica buckets based on a replication factor"""
