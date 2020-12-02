@@ -35,11 +35,11 @@ def propogate_view_change():
     """
     json = request.get_json()
     view = json.get("view")
-    repl_factor = json.get("repl_factor")
+    repl_factor = json.get("repl-factor")
     shard = kvs_distributor.change_view(
-        ips=view, repl_factor=repl_factor, propogate=False
+        ips=view, repl_factor=repl_factor, propagate=False
     )
-    return shard, 200
+    return {"kvs": shard}, 200
 
 
 @kvs_router.route("/view-change", methods=["PUT"])
@@ -56,7 +56,7 @@ def client_view_change():
     view = json.get("view").split(",")
     repl_factor = json.get("repl-factor")
     template = kvs_distributor.change_view(
-        ips=view, repl_factor=repl_factor, propogate=True
+        ips=view, repl_factor=repl_factor, propagate=True
     )
     return view_change_response(template=template)
 

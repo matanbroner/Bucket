@@ -22,7 +22,7 @@ from constants.errors import (
 from constants.messages import GET_SUCCESS, PUT_NEW_SUCCESS, PUT_UPDATE_SUCCESS
 from constants.responses import GetResponse, PutResponse
 
-GOSSIP_INTERVAL = 3
+GOSSIP_INTERVAL = 5
 
 
 class KVSDistributor:
@@ -75,6 +75,7 @@ class KVSDistributor:
                         (request(url_complete, method, headers, json[index]), ip)
                     )
                 except requests.exceptions.ConnectionError:
+                    printer(f"Connection error to IP: {ip}")
                     pass
         return responses
 
@@ -155,14 +156,14 @@ class KVSDistributor:
         distributed_keys = [{} for bucket in self.view.buckets]
         for key in kvs:
             bucket_index = self._assign_key_bucket(key)
-            distributed_keys[bucket_index]["kvs"][key] = kvs.get(key)
+            distributed_keys[bucket_index][key] = kvs.get(key)
         return distributed_keys
 
-    def _generate_replica_template(self, bucket_shards: dict) -> list:
+    def _generate_replica_template(self, bucket_shards: list) -> list:
         """Creates expected tamplate for a view change response to client
 
         Args:
-            bucket_shards (dict): response from _shard_keys
+            bucket_shards (list): response from _shard_keys
 
         Returns:
             list: shards in expected format
@@ -173,7 +174,7 @@ class KVSDistributor:
                 "key_count": len(bucket_shards[index]),
                 "replicas": self.view.buckets[index],
             }
-            for index in enumerate(bucket_shards)
+            for index, _ in enumerate(bucket_shards)
         ]
 
     def _key_valid(self, key: str) -> bool:
@@ -218,7 +219,9 @@ class KVSDistributor:
         # set up default return as a node's shard
         return_template = self.kvs.json()
         # get all current + legacy ips as set to allow for dropped nodes
-        ips_union = list(set(ips + self.views.all_ips))
+        ips_union = [
+            ip for ip in list(set(ips + self.view.all_ips)) if ip != self.view.address
+        ]
         # set new view -> new buckets
         self.view = View(ips, self.view.address, repl_factor)
         if propagate:
@@ -238,12 +241,14 @@ class KVSDistributor:
             ]
             # use a mitigation function to combine all shards
             # this function will pick a more recent value in an identical key conflict
+
+            # include own shard
+            shards.append(self.kvs.json())
             for shard in shards:
                 if isinstance(shard, dict):
                     central_kvs = KVS.combine_conflicting_shards(
                         central_kvs, shard, reset_clock=True, as_dict=True
                     )
-
             # assign new shard to each bucket
             bucket_shards = self._shard_keys(central_kvs)
             for shard, bucket in zip(bucket_shards, self.view.buckets):
@@ -253,6 +258,9 @@ class KVSDistributor:
                 json = {"kvs": shard}
                 # if a node fails to get the shard, gossip will handle it
                 self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
+
+            # set own shard
+            self.kvs = KVS(bucket_shards[self.view.bucket_index])
 
             # generate return template
             return_template = self._generate_replica_template(bucket_shards)
@@ -390,7 +398,7 @@ class KVSDistributor:
                     address=self.view.address,
                     context=context,
                 )
-            elif not value:
+            elif value == None:
                 # value missing
                 return PutResponse(
                     status_code=400,
