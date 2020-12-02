@@ -17,7 +17,7 @@ put_error_msg = "Error in PUT"
 del_error_msg = "Error in DEL"
 
 
-class causal_test(unittest.TestCase):
+class gossip_test(unittest.TestCase):
     def put_request(self, port, key, val, context):
         return requests.put(
             "http://localhost:%s/kvs/keys/%s" % (port, key),
