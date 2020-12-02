@@ -142,6 +142,9 @@ def dynamic_key_route(key):
     global address
     json = request.get_json() or {}
     context = json.get("causal-context", {})
+    # ensure we can handle an empty string or any other bad value for context
+    if not isinstance(context, dict):
+        context = {}
     res = None
     if request.method == "GET":
         res = kvs_distributor.get(key, context)

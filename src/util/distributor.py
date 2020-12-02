@@ -332,6 +332,15 @@ class KVSDistributor:
         """
         bucket_index = self._assign_key_bucket(key)
         if self.view.is_own_bucket_index(bucket_index):
+            # given context is ahead of local KVS
+            if self._causal_context_ahead(key, context):
+                return GetResponse(
+                    status_code=400,
+                    value=None,
+                    context=context,
+                    address=self.view.address,
+                    error=INVALID_CAUSAL_CONTEXT,
+                )
             entry = self.kvs.get(key)
             # key not in local KVS
             if not entry:
@@ -341,15 +350,6 @@ class KVSDistributor:
                     context=context,
                     address=self.view.address,
                     error=KEY_NOT_EXIST,
-                )
-            # given context is ahead of local KVS
-            if self._causal_context_ahead(key, context):
-                return GetResponse(
-                    status_code=400,
-                    value=None,
-                    context=context,
-                    address=self.view.address,
-                    error=INVALID_CAUSAL_CONTEXT,
                 )
             # successful fetch
             return GetResponse(
