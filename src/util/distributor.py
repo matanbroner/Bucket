@@ -38,12 +38,7 @@ class KVSDistributor:
         self.view = View(ips, address, repl_factor)
         self.kvs = KVS()
         # schedule repeated gossip in bucket
-        if repl_factor > 1:
-            Scheduler.add_job(
-                function=self._send_gossip,
-                seconds=GOSSIP_INTERVAL,
-                id="send_gossip",
-            )
+        self._start_gossiping()
 
     # Private Functions
 
@@ -188,6 +183,14 @@ class KVSDistributor:
         """
         return isinstance(key, str) and len(key) <= 50
 
+    def _start_gossiping(self):
+        if self.view.repl_factor > 1:
+            Scheduler.add_job(
+                function=self._send_gossip,
+                seconds=GOSSIP_INTERVAL,
+                id="send_gossip",
+            )
+
     def _send_gossip(self):
         bucket = self.view.self_replication_bucket(own_ip=False)
         url = "/kvs/gossip"
@@ -224,6 +227,9 @@ class KVSDistributor:
         ]
         # set new view -> new buckets
         self.view = View(ips, self.view.address, repl_factor)
+        Scheduler.clear_jobs()
+        # init gossip again with new view, needed to force refresh scheduler underlying class
+        self._start_gossiping()
         if propagate:
             central_kvs = {}
 
