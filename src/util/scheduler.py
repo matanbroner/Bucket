@@ -70,3 +70,9 @@ class Scheduler:
         )
         cls.jobs[id] = job
         return id
+
+    @classmethod
+    def clear_jobs(cls):
+        for job_id in cls.jobs:
+            cls.jobs[job_id].remove()
+        cls.jobs = {}
