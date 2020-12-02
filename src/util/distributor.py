@@ -22,7 +22,7 @@ from constants.errors import (
 from constants.messages import GET_SUCCESS, PUT_NEW_SUCCESS, PUT_UPDATE_SUCCESS
 from constants.responses import GetResponse, PutResponse
 
-GOSSIP_INTERVAL = 5
+GOSSIP_INTERVAL = 2
 
 
 class KVSDistributor:
