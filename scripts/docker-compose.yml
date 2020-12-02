@@ -56,6 +56,32 @@ services:
         ipv4_address: 10.10.0.5
     volumes: ["../src:/app"]
 
+  node5:
+    build: ../
+    ports:
+      - "13804:13800"
+    environment:
+      FLASK_DEBUG: 1
+      ADDRESS: "10.10.0.6:13800"
+      REPL_FACTOR: 1
+    networks:
+      kv_subnet:
+        ipv4_address: 10.10.0.6
+    volumes: ["../src:/app"]
+
+  node6:
+    build: ../
+    ports:
+      - "13805:13800"
+    environment:
+      FLASK_DEBUG: 1
+      ADDRESS: "10.10.0.7:13800"
+      REPL_FACTOR: 1
+    networks:
+      kv_subnet:
+        ipv4_address: 10.10.0.7
+    volumes: ["../src:/app"]
+
 networks:
   kv_subnet:
     ipam:

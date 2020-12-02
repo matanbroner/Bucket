@@ -3,6 +3,13 @@ import sys
 import requests
 from flask import Blueprint, jsonify, request
 from util.distributor import KVSDistributor
+from constants.responses import (
+    key_count_response,
+    all_shards_info_response,
+    single_shard_info_response,
+    success_response,
+    view_change_response,
+)
 from util.misc import printer
 
 address = os.getenv("ADDRESS")
@@ -28,11 +35,11 @@ def propogate_view_change():
     """
     json = request.get_json()
     view = json.get("view")
-    repl_factor = json.get("repl_factor")
+    repl_factor = json.get("repl-factor")
     shard = kvs_distributor.change_view(
-        ips=view, repl_factor=repl_factor, propogate=False
+        ips=view, repl_factor=repl_factor, propagate=False
     )
-    return shard, 200
+    return {"kvs": shard}, 200
 
 
 @kvs_router.route("/view-change", methods=["PUT"])
@@ -49,9 +56,9 @@ def client_view_change():
     view = json.get("view").split(",")
     repl_factor = json.get("repl-factor")
     template = kvs_distributor.change_view(
-        ips=view, repl_factor=repl_factor, propogate=True
+        ips=view, repl_factor=repl_factor, propagate=True
     )
-    return {"shards": template}, 200
+    return view_change_response(template=template)
 
 
 @kvs_router.route("/shard", methods=["PUT"])
@@ -67,7 +74,7 @@ def accept_shard():
     json = request.get_json()
     shard = json.get("kvs")
     kvs_distributor.merge_shard(shard)
-    return "Success", 200
+    return success_response()
 
 
 @kvs_router.route("/gossip", methods=["PUT"])
@@ -80,11 +87,10 @@ def accept_gossip():
     Returns:
         tuple: json, status code
     """
-    printer("Got gossip")
     json = request.get_json()
     shard = json.get("kvs")
     kvs_distributor.merge_gossip(shard)
-    return "Success", 200
+    return success_response()
 
 
 @kvs_router.route("/key-count", methods=["GET"])
@@ -95,7 +101,29 @@ def key_count():
         tuple: json, status code
     """
     count = kvs_distributor.key_count()
-    return count, 200
+    id = kvs_distributor.shard_id()
+    return key_count_response(count, id)
+
+
+@kvs_router.route("/shards/", defaults={"shard_id": None})
+@kvs_router.route("/shards/<shard_id>")
+def shard_info(shard_id):
+    """Generic route allowing for retrieval of all shards' info or single shard info
+
+    Args:
+        shard_id (int, optional): ID of shard if single shard info call. Defaults to None.
+
+    Returns:
+        [type]: [description]
+    """
+    if shard_id:
+        shard_id = int(shard_id)
+        key_count = kvs_distributor.key_count(bucket_index=shard_id)
+        replicas = kvs_distributor.bucket(id=shard_id)
+        return single_shard_info_response(key_count, shard_id, replicas)
+    else:
+        all_shards = kvs_distributor.all_bucket_ids()
+        return all_shards_info_response(all_shards)
 
 
 @kvs_router.route("/keys/<key>", methods=["GET", "PUT", "DELETE"])
@@ -112,15 +140,17 @@ def dynamic_key_route(key):
         tuple: json, status code
     """
     global address
-    json = request.get_json()
+    json = request.get_json() or {}
     context = json.get("causal-context", {})
+    # ensure we can handle an empty string or any other bad value for context
+    if not isinstance(context, dict):
+        context = {}
     res = None
     if request.method == "GET":
         res = kvs_distributor.get(key, context)
     elif request.method == "PUT":
         res = kvs_distributor.put(key, json.get("value"), context)
 
-    printer(res.__dict__)
     return res.to_flask_response(include_address=res.address != address)
 
 
