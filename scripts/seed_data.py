@@ -7,7 +7,7 @@ import string
 letters = list(string.ascii_lowercase)
 
 
-def generate_keys(num_keys: int = 500):
+def generate_keys(num_keys: int = 100):
     keys = []
     for i in range(num_keys):
         keys.append("{}{}{}{}{}".format(*[random.choice(letters) for _ in range(5)]))

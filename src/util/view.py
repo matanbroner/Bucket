@@ -10,9 +10,6 @@ class View:
         """Validates view inputs"""
         try:
             assert (
-                self.address in self.all_ips
-            ), f"Own address [{self.address}] not in view [{self.all_ips}]"
-            assert (
                 len(self.all_ips) % self.repl_factor == 0
             ), f"Length of view {self.all_ips} not divisible by {self.repl_factor}"
         except AssertionError:
