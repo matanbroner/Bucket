@@ -31,6 +31,7 @@ class View:
         for index, bucket in enumerate(self.buckets):
             if self.address in bucket:
                 self.bucket_index = index
+                self.replica_index = bucket.index(self.address)
                 break
 
     def num_buckets(self) -> int:

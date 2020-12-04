@@ -73,6 +73,7 @@ class KVS:
         """
         self.kvs[key] = value
         self.context_store[key] = self.new_context(self.replicas)
+        self.context_store[key][CLOCK][self.replica_index] = 1
 
     def update(self, key: str, value: str, clock_args: tuple = None):
         """Update KVS entry with new value and metadata
@@ -95,7 +96,7 @@ class KVS:
     def update_context(self, context: dict):
         self.context_store.update(context)
 
-    def compare(self, key: str, clock_args: tuple) -> int:
+    def compare(self, key: str, clock: list) -> int:
         """Compares two KVS entries for a key to determine which is more recent
 
         Args:
@@ -108,13 +109,14 @@ class KVS:
                 else, return -1
         """
         v_clock = self.context_store.get(key, self.new_context(self.replicas))[CLOCK]
-        replica_index, clock = clock_args
         if not clock:
-            return -1
+            return 1
         # Cj[i] = VC[i] - 1
         # Cj[k] >= VC[k] for k=i
-        if v_clock[replica_index] != clock[replica_index] - 1 or True in [
-            v_clock[p] < clock[p] for p in range(self.replicas) if p != replica_index
+        elif v_clock[self.replica_index] != clock[self.replica_index] - 1 or True in [
+            v_clock[p] < clock[p]
+            for p in range(self.replicas)
+            if p != self.replica_index
         ]:
             return 1
         else:
@@ -129,23 +131,45 @@ class KVS:
         return {CLOCK: [0 for _ in range(replicas)], TIMESTAMP: time.time()}
 
     @classmethod
-    def combine_contexts(cls, context_a: dict, context_b: dict):
+    def combine_contexts(
+        cls, context_a: dict, context_b: dict, use_intersection: bool = False
+    ):
         # intersections of contexts' keys
-        keys = list(set(context_a.keys()) & set(context_b.keys()))
+        keys = set().union(context_a.keys(), context_b.keys())
+        if use_intersection:
+            keys = [key for key in keys if key in context_a and key in context_b]
         context = {}
         for key in keys:
-            clock_a, clock_b = context_a.get(key), context_b.get(key)
-            context.update({key: cls.combine_clocks(clock_a, clock_b)})
+            clock_a, clock_b = context_a.get(key).get(CLOCK), context_b.get(key).get(
+                CLOCK
+            )
+            if clock_a and clock_b:
+                ts_a, ts_b = (
+                    context_a.get(key)[TIMESTAMP],
+                    context_b.get(key)[TIMESTAMP],
+                )
+                context.update(
+                    {
+                        key: {
+                            CLOCK: cls.combine_clocks(clock_a, clock_b),
+                            TIMESTAMP: max(ts_a, ts_b),
+                        }
+                    }
+                )
+            else:
+                valid_context = context_a.get(key) or context_b.get(key)
+                context.update(
+                    {
+                        key: {
+                            CLOCK: valid_context[CLOCK],
+                            TIMESTAMP: valid_context[TIMESTAMP],
+                        }
+                    }
+                )
         return context
 
     @classmethod
-    def combine_conflicting_shards(
-        cls,
-        kvs_args: tuple,
-        replicas: int,
-        assign_key,
-        reset_clock: bool = False,
-    ):
+    def combine_conflicting_shards(cls, kvs_args: tuple):
         """Merges two shards (ie. dicts) which may have conflicting values for keys
 
         Args:
@@ -158,22 +182,26 @@ class KVS:
             KVS: [description]
         """
         kvs_a, context_a, kvs_b, context_b = kvs_args
-        for key, entry in kvs_b:
+        all_keys = set().union(kvs_a.keys(), kvs_b.keys())
+        for key in all_keys:
             # mitigate any conflicts between keys existing in both kvs's
-            shard_index = assign_key(key)
-            clock_a, clock_b = (
-                context_a.get(key, cls.new_clock(replicas)),
-                context_b.get(key, cls.new_clock(replicas)),
+            val_a, val_b = (
+                kvs_a.get(key),
+                kvs_b.get(key),
             )
-            value = (
-                kvs_a.get(key)
-                if clock_a[shard_index] > clock_b[shard_index]
-                else kvs_b.get(key)
-            )
-            kvs_a[key] = value
-            context_a[key] = (
-                cls.combine_clocks(clock_a, clock_b)
-                if not reset_clock
-                else cls.new_clock(replicas)
-            )
+            entry_a, entry_b = context_a.get(key), context_b.get(key)
+            if val_a and val_b:
+                value = (
+                    kvs_a.get(key)
+                    if entry_a[TIMESTAMP] > entry_b[TIMESTAMP]
+                    else kvs_b.get(key)
+                )
+                kvs_a[key] = value
+                context_a[key] = cls.combine_contexts({key: entry_a}, {key: entry_b})
+            else:
+                valid_context, value = (
+                    (entry_a, val_a) if val_a else (entry_b, val_b),
+                )
+                kvs_a[key] = value
+                context_a[key] = valid_context
         return kvs_a, context_a
