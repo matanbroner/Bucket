@@ -1,6 +1,9 @@
 import time
 from util.misc import printer
 
+CLOCK = "clock"
+TIMESTAMP = "last_write"
+
 
 class KVS:
     def __init__(
@@ -17,16 +20,13 @@ class KVS:
 
         # set a default clock value for all keys if no context given
         if len(kvs) > 0 and len(context_store) == 0:
-            self.context_store = {key: self.new_clock(replicas) for key in kvs}
+            self.reset_context()
 
     def __iter__(self):
         return iter(self.kvs.items())
 
     def __len__(self):
         return len(self.kvs)
-
-    def _new_clock(self):
-        return [0 for _ in range(self.replicas)]
 
     def clear(self):
         """Reset KVS"""
@@ -50,13 +50,16 @@ class KVS:
         return self.context_store
 
     def reset_context(self):
-        self.context_store = {key: self._new_clock(self.replicas) for key in self.kvs}
+        timestamp = time.time()
+        self.context_store = {key: self.new_context(self.replicas) for key in self.kvs}
 
-    def get_key_clock(self, key: str):
+    def get_key_context(self, key: str):
         return self.context_store.get(key)
 
-    def increment_key_clock(self, key: str):
-        self.context_store[key][self.replica_index] += 1
+    def increment_key_clock(self, key: str, update_timstamp: bool = False):
+        self.context_store[key][CLOCK][self.replica_index] += 1
+        if update_timstamp:
+            self.context_store[key][TIMESTAMP] = time.time()
 
     def get(self, key, default=None):
         return self.kvs.get(key, default)
@@ -69,7 +72,7 @@ class KVS:
             value (str)
         """
         self.kvs[key] = value
-        self.context_store[key] = self._new_clock(self.replicas)
+        self.context_store[key] = self.new_context(self.replicas)
 
     def update(self, key: str, value: str, clock_args: tuple = None):
         """Update KVS entry with new value and metadata
@@ -79,13 +82,15 @@ class KVS:
             value (str)
             timestamp (float, optional): [description]. Defaults to time.time().
         """
-        replica_index, clock_count = (
+        replica_index, clock_count, timestamp = (
             self.replica_index,
             self.context_store[key][replica_index] + 1,
+            time.time(),
         )
         if clock_args:
-            replica_index, clock_count = clock_args
-        self.context_store[key][replica_index] = clock_count
+            replica_index, clock_count, timestamp = clock_args
+        self.context_store[key][CLOCK][replica_index] = clock_count
+        self.context_store[key][TIMESTAMP] = timestamp
 
     def update_context(self, context: dict):
         self.context_store.update(context)
@@ -102,7 +107,7 @@ class KVS:
                 if passed in entry more recent, return 1
                 else, return -1
         """
-        v_clock = self.context_store.get(key, self._new_clock(self.replicas))
+        v_clock = self.context_store.get(key, self.new_context(self.replicas))[CLOCK]
         replica_index, clock = clock_args
         if not clock:
             return -1
@@ -120,8 +125,8 @@ class KVS:
         return [max(a, b) for a, b in zip(clock_a, clock_b)]
 
     @classmethod
-    def new_clock(cls, replicas: int):
-        return [0 for _ in range(replicas)]
+    def new_context(cls, replicas: int):
+        return {CLOCK: [0 for _ in range(replicas)], TIMESTAMP: time.time()}
 
     @classmethod
     def combine_contexts(cls, context_a: dict, context_b: dict):
