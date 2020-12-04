@@ -1,5 +1,11 @@
+from util.misc import printer
+
+
 class View:
     def __init__(self, ips: list, address: str, repl_factor: int):
+        printer(
+            "Creating view {}, address {}, repl {}".format(ips, address, repl_factor)
+        )
         self.all_ips = ips
         self.address = address
         self.repl_factor = repl_factor

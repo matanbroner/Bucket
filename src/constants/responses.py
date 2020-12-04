@@ -71,7 +71,7 @@ def view_change_response(template: dict):
     Returns:
         tuple: json, status code
     """
-    return {"shards": template}, 200
+    return {"shards": template, "message": "View change successful"}, 200
 
 
 class GetResponse(typing.NamedTuple):

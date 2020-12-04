@@ -3,8 +3,21 @@ from util.misc import printer
 
 
 class KVS:
-    def __init__(self, kvs: dict = {}):
+    def __init__(
+        self,
+        replicas: int,
+        replica_index: int,
+        kvs: dict = {},
+        context_store: dict = {},
+    ):
         self.kvs = kvs
+        self.context_store = context_store
+        self.replicas = replicas
+        self.replica_index = replica_index
+
+        # set a default clock value for all keys if no context given
+        if len(kvs) > 0 and len(context_store) == 0:
+            self.context_store = {key: self.new_clock(replicas) for key in kvs}
 
     def __iter__(self):
         return iter(self.kvs.items())
@@ -12,9 +25,13 @@ class KVS:
     def __len__(self):
         return len(self.kvs)
 
+    def _new_clock(self):
+        return [0 for _ in range(self.replicas)]
+
     def clear(self):
         """Reset KVS"""
         self.kvs = {}
+        self.context_store = {}
 
     def json(self) -> dict:
         """Return JSON serializable version of KVS
@@ -30,15 +47,16 @@ class KVS:
         Returns:
             dict: key with dict value having keys and "timestamp"
         """
-        return {
-            key: {"timestamp": entry["timestamp"]} for key, entry in self.kvs.items()
-        }
+        return self.context_store
 
-    def reset_context(self, key: str, timestamp: float = None):
-        if not timestamp:
-            timestamp = time.time()
-        if self.kvs.get(key):
-            self.kvs[key]["timestamp"] = timestamp
+    def reset_context(self):
+        self.context_store = {key: self._new_clock(self.replicas) for key in self.kvs}
+
+    def get_key_clock(self, key: str):
+        return self.context_store.get(key)
+
+    def increment_key_clock(self, key: str):
+        self.context_store[key][self.replica_index] += 1
 
     def get(self, key, default=None):
         return self.kvs.get(key, default)
@@ -50,9 +68,10 @@ class KVS:
             key (str)
             value (str)
         """
-        self.kvs[key] = {"value": value, "timestamp": time.time()}
+        self.kvs[key] = value
+        self.context_store[key] = self._new_clock(self.replicas)
 
-    def update(self, key: str, value: str, timestamp: float = None):
+    def update(self, key: str, value: str, clock_args: tuple = None):
         """Update KVS entry with new value and metadata
 
         Args:
@@ -60,11 +79,18 @@ class KVS:
             value (str)
             timestamp (float, optional): [description]. Defaults to time.time().
         """
-        if not timestamp:
-            timestamp = time.time()
-        self.kvs[key] = {"value": value, "timestamp": timestamp}
+        replica_index, clock_count = (
+            self.replica_index,
+            self.context_store[key][replica_index] + 1,
+        )
+        if clock_args:
+            replica_index, clock_count = clock_args
+        self.context_store[key][replica_index] = clock_count
 
-    def compare(self, key: str, timestamp: float) -> int:
+    def update_context(self, context: dict):
+        self.context_store.update(context)
+
+    def compare(self, key: str, clock_args: tuple) -> int:
         """Compares two KVS entries for a key to determine which is more recent
 
         Args:
@@ -76,17 +102,44 @@ class KVS:
                 if passed in entry more recent, return 1
                 else, return -1
         """
-        entry = self.kvs.get(key, None)
-        if not entry:
-            return 1
-        if entry["timestamp"] >= timestamp:
+        v_clock = self.context_store.get(key, self._new_clock(self.replicas))
+        replica_index, clock = clock_args
+        if not clock:
             return -1
-        else:
+        # Cj[i] = VC[i] - 1
+        # Cj[k] >= VC[k] for k=i
+        if v_clock[replica_index] != clock[replica_index] - 1 or True in [
+            v_clock[p] < clock[p] for p in range(self.replicas) if p != replica_index
+        ]:
             return 1
+        else:
+            return -1
+
+    @staticmethod
+    def combine_clocks(clock_a: list, clock_b: list):
+        return [max(a, b) for a, b in zip(clock_a, clock_b)]
+
+    @classmethod
+    def new_clock(cls, replicas: int):
+        return [0 for _ in range(replicas)]
+
+    @classmethod
+    def combine_contexts(cls, context_a: dict, context_b: dict):
+        # intersections of contexts' keys
+        keys = list(set(context_a.keys()) & set(context_b.keys()))
+        context = {}
+        for key in keys:
+            clock_a, clock_b = context_a.get(key), context_b.get(key)
+            context.update({key: cls.combine_clocks(clock_a, clock_b)})
+        return context
 
     @classmethod
     def combine_conflicting_shards(
-        cls, kvs_a: dict, kvs_b: dict, reset_clock: bool = False, as_dict: bool = True
+        cls,
+        kvs_args: tuple,
+        replicas: int,
+        assign_key,
+        reset_clock: bool = False,
     ):
         """Merges two shards (ie. dicts) which may have conflicting values for keys
 
@@ -99,12 +152,23 @@ class KVS:
         Returns:
             KVS: [description]
         """
-        start_timestamp = time.time()
-        kvs_a, kvs_b = cls(kvs_a), cls(kvs_b)
+        kvs_a, context_a, kvs_b, context_b = kvs_args
         for key, entry in kvs_b:
             # mitigate any conflicts between keys existing in both kvs's
-            if kvs_a.compare(key, entry["timestamp"]) == 1:
-                kvs_a.kvs[key] = entry
-            if reset_clock:
-                kvs_a.reset_context(key, start_timestamp)
-        return kvs_a.json() if as_dict else kvs_a
+            shard_index = assign_key(key)
+            clock_a, clock_b = (
+                context_a.get(key, cls.new_clock(replicas)),
+                context_b.get(key, cls.new_clock(replicas)),
+            )
+            value = (
+                kvs_a.get(key)
+                if clock_a[shard_index] > clock_b[shard_index]
+                else kvs_b.get(key)
+            )
+            kvs_a[key] = value
+            context_a[key] = (
+                cls.combine_clocks(clock_a, clock_b)
+                if not reset_clock
+                else cls.new_clock(replicas)
+            )
+        return kvs_a, context_a

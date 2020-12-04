@@ -22,7 +22,7 @@ from constants.errors import (
 from constants.messages import GET_SUCCESS, PUT_NEW_SUCCESS, PUT_UPDATE_SUCCESS
 from constants.responses import GetResponse, PutResponse
 
-GOSSIP_INTERVAL = 2
+GOSSIP_INTERVAL = 5
 
 
 class KVSDistributor:
@@ -36,7 +36,9 @@ class KVSDistributor:
 
     def __init__(self, ips: list, address: str, repl_factor: int):
         self.view = View(ips, address, repl_factor)
-        self.kvs = KVS()
+        self.kvs = KVS(
+            buckets=self.view.num_buckets(), bucket_index=self.view.bucket_index
+        )
         # schedule repeated gossip in bucket
         self._start_gossiping()
 
@@ -101,7 +103,9 @@ class KVSDistributor:
         # TODO: Figure out if this use case needs to be handled...
         return None, None
 
-    def _causal_context_ahead(self, key: str, context: dict = {}) -> bool:
+    def _causal_context_ahead(
+        self, key: str, bucket_index: int, context: dict = {}
+    ) -> bool:
         """Check if given causal context is ahead of local KVS for a given key
 
         Args:
@@ -111,11 +115,11 @@ class KVSDistributor:
         Returns:
             bool: True if given context is ahead of local context
         """
-        key_context = context.get(key)
-        if not key_context:
+        clock = context.get(key)
+        if not clock:
             # context not aware of key
             return False
-        return self.kvs.compare(key, key_context["timestamp"]) == 1
+        return self.kvs.compare(key, clock_args=(bucket_index, clock)) == 1
 
     def _assign_key_bucket(self, key: str, num_buckets: int = None) -> int:
         """Determines which replica bucket is assigned a key based on number of buckets and Murmurhash
@@ -166,7 +170,7 @@ class KVSDistributor:
         return [
             {
                 "shard-id": index,
-                "key_count": len(bucket_shards[index]),
+                "key-count": len(bucket_shards[index]),
                 "replicas": self.view.buckets[index],
             }
             for index, _ in enumerate(bucket_shards)
@@ -194,19 +198,32 @@ class KVSDistributor:
     def _send_gossip(self):
         bucket = self.view.self_replication_bucket(own_ip=False)
         url = "/kvs/gossip"
-        json = {"kvs": self.kvs.json()}
+        json = {"kvs": self.kvs.json(), "context": self.kvs.context()}
         self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
+
+    def _append_key_context(self, key, context):
+        context.update({key: self.kvs.context().get(key)})
+        return context
 
     # Public Functions
 
-    def merge_gossip(self, shard: dict):
+    def merge_gossip(self, shard: dict, context: dict):
         """Accepts gossip from replicas in same bucket
 
         Args:
             shard (dict): key-value structure
         """
-        kvs_dict = self.kvs.json()
-        self.kvs = self.kvs.combine_conflicting_shards(kvs_dict, shard, as_dict=False)
+        kvs, context = self.kvs.combine_conflicting_shards(
+            kvs_args=(self.kvs.json(), self.kvs.context(), shard, context),
+            buckets=self.view.num_buckets(),
+            assign_key=self._assign_key_bucket,
+        )
+        self.kvs = KVS(
+            buckets=self.view.num_buckets(),
+            bucket_index=self.view.bucket_index,
+            kvs=kvs,
+            context_store=context,
+        )
 
     def change_view(self, ips: list, repl_factor: int, propagate: bool = False) -> dict:
         """Public interface for a view change
@@ -220,7 +237,7 @@ class KVSDistributor:
             dict: returned template, depending on propagation flag
         """
         # set up default return as a node's shard
-        return_template = self.kvs.json()
+        return_template = {"kvs": self.kvs.json(), "context": self.kvs.context()}
         # get all current + legacy ips as set to allow for dropped nodes
         ips_union = [
             ip for ip in list(set(ips + self.view.all_ips)) if ip != self.view.address
@@ -232,6 +249,7 @@ class KVSDistributor:
         self._start_gossiping()
         if propagate:
             central_kvs = {}
+            central_context = {}
 
             # get all sub-kvs's (ie. shards) from each node
             # note that there will be duplicate shards, but we do this
@@ -239,7 +257,7 @@ class KVSDistributor:
             url = "/kvs/view-change-propagate"
             json = {"view": ips, "repl-factor": repl_factor}
             shards = [
-                response.json().get("kvs")
+                (response.json().get("kvs"), response.json().get("context"))
                 for response, _ in self._request_multiple_ips(
                     ips=ips_union, url=url, method="PUT", json=json
                 )
@@ -249,11 +267,14 @@ class KVSDistributor:
             # this function will pick a more recent value in an identical key conflict
 
             # include own shard
-            shards.append(self.kvs.json())
-            for shard in shards:
+            shards.append((self.kvs.json(), self.kvs.context()))
+            for shard, context in shards:
                 if isinstance(shard, dict):
-                    central_kvs = KVS.combine_conflicting_shards(
-                        central_kvs, shard, reset_clock=True, as_dict=True
+                    central_kvs, central_context = KVS.combine_conflicting_shards(
+                        kvs_args=(central_kvs, central_context, shard, context),
+                        buckets=self.view.num_buckets(),
+                        assign_key=self._assign_key_bucket,
+                        reset_clock=True,
                     )
             # assign new shard to each bucket
             bucket_shards = self._shard_keys(central_kvs)
@@ -265,8 +286,13 @@ class KVSDistributor:
                 # if a node fails to get the shard, gossip will handle it
                 self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
 
-            # set own shard
-            self.kvs = KVS(bucket_shards[self.view.bucket_index])
+            # set own shard if still in view
+            if self.view.address in self.view.all_ips:
+                self.kvs = KVS(
+                    buckets=self.view.num_buckets(),
+                    bucket_index=self.view.bucket_index,
+                    kvs=bucket_shards[self.view.bucket_index],
+                )
 
             # generate return template
             return_template = self._generate_replica_template(bucket_shards)
@@ -278,7 +304,11 @@ class KVSDistributor:
         Args:
             shard (dict): key-value pairs
         """
-        self.kvs = KVS(shard)
+        self.kvs = KVS(
+            buckets=self.view.num_buckets(),
+            bucket_index=self.view.bucket_index,
+            kvs=shard,
+        )
 
     def key_count(self, bucket_index: int = None) -> int:
         """Returns number of keys in KVS
@@ -320,7 +350,7 @@ class KVSDistributor:
         """
         return [id for id, _ in enumerate(self.view.buckets)]
 
-    def get(self, key: str, context: str = {}) -> GetResponse:
+    def get(self, key: str, context: dict = {}) -> GetResponse:
         """Public interface for completing GET requests
 
         Args:
@@ -333,7 +363,7 @@ class KVSDistributor:
         bucket_index = self._assign_key_bucket(key)
         if self.view.is_own_bucket_index(bucket_index):
             # given context is ahead of local KVS
-            if self._causal_context_ahead(key, context):
+            if self._causal_context_ahead(key, bucket_index, context):
                 return GetResponse(
                     status_code=400,
                     value=None,
@@ -351,11 +381,18 @@ class KVSDistributor:
                     address=self.view.address,
                     error=KEY_NOT_EXIST,
                 )
+            self.kvs.increment_key_clock(key)
+            # add key to context for propagation
+            context.update({key: self.kvs.get_key_clock(key)})
+            # get max clocks for all keys in context
+            context = self.kvs.combine_contexts(context, self.kvs.context())
+            # apply context updates locally
+            self.kvs.update_context(context)
             # successful fetch
             return GetResponse(
                 status_code=200,
                 value=entry["value"],
-                context=self.kvs.context(),
+                context=context,
                 address=self.view.address,
                 error=None,
                 message=GET_SUCCESS,
@@ -396,6 +433,10 @@ class KVSDistributor:
         """
         bucket_index = self._assign_key_bucket(key)
         if self.view.is_own_bucket_index(bucket_index):
+            # update context where needed
+            # self.kvs = self.kvs.combine_conflicting_shards(
+            #     context, self.kvs.json(), as_dict=False
+            # )
             # key invalid
             if not self._key_valid(key):
                 return PutResponse(
@@ -404,8 +445,8 @@ class KVSDistributor:
                     address=self.view.address,
                     context=context,
                 )
+            # value missing
             elif value == None:
-                # value missing
                 return PutResponse(
                     status_code=400,
                     error=VALUE_MISSING,
