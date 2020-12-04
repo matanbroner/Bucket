@@ -39,7 +39,7 @@ def propogate_view_change():
     shard = kvs_distributor.change_view(
         ips=view, repl_factor=repl_factor, propagate=False
     )
-    return {"kvs": shard}, 200
+    return {"kvs": shard["kvs"], "context": shard["context"]}, 200
 
 
 @kvs_router.route("/view-change", methods=["PUT"])
@@ -89,7 +89,8 @@ def accept_gossip():
     """
     json = request.get_json()
     shard = json.get("kvs")
-    kvs_distributor.merge_gossip(shard)
+    context = shard.get("context")
+    kvs_distributor.merge_gossip(shard, context)
     return success_response()
 
 
@@ -166,6 +167,14 @@ def all_keys():
     """
     return jsonify(kvs_distributor.kvs.json()), 200
 
+@kvs_router.route("/all-context", methods=["GET"])
+def all_context():
+    """Returns all keys in KVS
+
+    Returns:
+        tuple: json, status code
+    """
+    return jsonify(kvs_distributor.kvs.context()), 200
 
 @kvs_router.route("/info", methods=["GET"])
 def info():

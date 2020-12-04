@@ -395,7 +395,7 @@ class KVSDistributor:
             # successful fetch
             return GetResponse(
                 status_code=200,
-                value=entry["value"],
+                value=entry,
                 context=context,
                 address=self.view.address,
                 error=None,
@@ -458,24 +458,33 @@ class KVSDistributor:
                     context=context,
                 )
             entry = self.kvs.get(key)
+            status_code = None
+            message = None
             if entry:
                 # update key-value
                 self.kvs.update(key, value)
-                return PutResponse(
-                    status_code=200,
-                    context=self.kvs.context(),
-                    address=self.view.address,
-                    message=PUT_UPDATE_SUCCESS,
-                )
+                status_code=200
+                message=PUT_UPDATE_SUCCESS
             else:
                 # insert key-value
                 self.kvs.insert(key, value)
-                return PutResponse(
-                    status_code=201,
-                    context=self.kvs.context(),
+                status_code=201
+                message=PUT_NEW_SUCCESS
+            # add key to context for propagation
+            context.update({key: self.kvs.get_key_context(key)})
+            # update keys' contexts which are [potentially] assigned to us
+            self._update_relevant_context(context)
+            # get max clocks for all keys in context
+            context = self.kvs.combine_contexts(
+                context, self.kvs.context(), use_intersection=True
+            )
+            return PutResponse(
+                    status_code=status_code,
                     address=self.view.address,
-                    message=PUT_NEW_SUCCESS,
+                    message=message,
+                    context=context,
                 )
+            
         else:
             # proxy request to another bucket
             bucket = self.view.buckets[bucket_index]

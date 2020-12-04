@@ -85,7 +85,7 @@ class KVS:
         """
         replica_index, clock_count, timestamp = (
             self.replica_index,
-            self.context_store[key][replica_index] + 1,
+            self.context_store[key][CLOCK][self.replica_index] + 1,
             time.time(),
         )
         if clock_args:
