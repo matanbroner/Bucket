@@ -109,10 +109,10 @@ class KVS:
                 if passed in entry more recent, return 1
                 else, return -1
         """
-        v_clock = self.context_store.get(key, self.new_context(self.replicas))[CLOCK]
+        clock = self.context_store.get(key, self.new_context(self.replicas))[CLOCK]
         # Cj[i] = VC[i] - 1
         # Cj[k] >= VC[k] for k=i
-        if v_clock[self.replica_index] < clock[self.replica_index] - 1 or True in [
+        if clock[self.replica_index] < clock[self.replica_index] - 1 or True in [
             v_clock[p] < clock[p]
             for p in range(self.replicas)
             if p != self.replica_index
