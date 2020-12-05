@@ -38,7 +38,7 @@ class KVSDistributor:
         self.view = View(ips, address, repl_factor)
         self.kvs = KVS(replicas=repl_factor, replica_index=self.view.replica_index)
         # schedule repeated gossip in bucket
-        self._start_gossiping()
+        # self._start_gossiping()
 
     # Private Functions
 
@@ -113,11 +113,22 @@ class KVSDistributor:
         Returns:
             bool: True if given context is ahead of local context
         """
-        clock = context.get(key)
-        if not clock:
+        key_context = context.get(key)
+        if not key_context:
             # context not aware of key
             return False
-        return self.kvs.compare(key, clock) == 1
+        return self.kvs.compare(key, key_context["clock"]) == 1
+
+    def _update_relevant_context(self, context: dict):
+        # Get only keys belnging to shard
+        return {
+            key: self.kvs.combine_contexts(
+                context_a={key: self.kvs.get_key_context(key)},
+                context_b={key: context.get(key)},
+            )[key]
+            for key in context
+            if self.view.is_own_bucket_index(self._assign_key_bucket(key))
+        }
 
     def _assign_key_bucket(self, key: str, num_buckets: int = None) -> int:
         """Determines which replica bucket is assigned a key based on number of buckets and Murmurhash
@@ -155,15 +166,6 @@ class KVSDistributor:
             bucket_index = self._assign_key_bucket(key)
             distributed_keys[bucket_index][key] = kvs.get(key)
         return distributed_keys
-
-    def _update_relevant_context(self, context: dict):
-        self.kvs.update_context(
-            {
-                key: context[key]
-                for key in context
-                if self.view.is_own_bucket_index(self._assign_key_bucket(key))
-            }
-        )
 
     def _generate_replica_template(self, bucket_shards: list) -> list:
         """Creates expected tamplate for a view change response to client
@@ -383,15 +385,14 @@ class KVSDistributor:
                     address=self.view.address,
                     error=KEY_NOT_EXIST,
                 )
+            # get up to date context for each key in context
+            self.kvs.update_context(self._update_relevant_context(context))
+            # assign updated context locally
+            # self.kvs.update_context(context)
+            # increment clock for read events
             self.kvs.increment_key_clock(key)
             # add key to context for propagation
             context.update({key: self.kvs.get_key_context(key)})
-            # update keys' contexts which are [potentially] assigned to us
-            self._update_relevant_context(context)
-            # get max clocks for all keys in context
-            context = self.kvs.combine_contexts(
-                context, self.kvs.context(), use_intersection=True
-            )
             # successful fetch
             return GetResponse(
                 status_code=200,
@@ -463,28 +464,26 @@ class KVSDistributor:
             if entry:
                 # update key-value
                 self.kvs.update(key, value)
-                status_code=200
-                message=PUT_UPDATE_SUCCESS
+                status_code = 200
+                message = PUT_UPDATE_SUCCESS
             else:
                 # insert key-value
                 self.kvs.insert(key, value)
-                status_code=201
-                message=PUT_NEW_SUCCESS
+                status_code = 201
+                message = PUT_NEW_SUCCESS
+            # get up to date context for each key in context
+            self.kvs.update_context(self._update_relevant_context(context))
+            # assign updated context locally
+            # self.kvs.update_context(context)
             # add key to context for propagation
             context.update({key: self.kvs.get_key_context(key)})
-            # update keys' contexts which are [potentially] assigned to us
-            self._update_relevant_context(context)
-            # get max clocks for all keys in context
-            context = self.kvs.combine_contexts(
-                context, self.kvs.context(), use_intersection=True
-            )
             return PutResponse(
-                    status_code=status_code,
-                    address=self.view.address,
-                    message=message,
-                    context=context,
-                )
-            
+                status_code=status_code,
+                address=self.view.address,
+                message=message,
+                context=context,
+            )
+
         else:
             # proxy request to another bucket
             bucket = self.view.buckets[bucket_index]

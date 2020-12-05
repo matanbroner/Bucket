@@ -56,9 +56,9 @@ class KVS:
     def get_key_context(self, key: str):
         return self.context_store.get(key)
 
-    def increment_key_clock(self, key: str, update_timstamp: bool = False):
+    def increment_key_clock(self, key: str, update_timestamp: bool = False):
         self.context_store[key][CLOCK][self.replica_index] += 1
-        if update_timstamp:
+        if update_timestamp:
             self.context_store[key][TIMESTAMP] = time.time()
 
     def get(self, key, default=None):
@@ -92,11 +92,12 @@ class KVS:
             replica_index, clock_count, timestamp = clock_args
         self.context_store[key][CLOCK][replica_index] = clock_count
         self.context_store[key][TIMESTAMP] = timestamp
+        self.kvs[key] = value
 
     def update_context(self, context: dict):
         self.context_store.update(context)
 
-    def compare(self, key: str, clock: list) -> int:
+    def local_context_ahead(self, key: str) -> int:
         """Compares two KVS entries for a key to determine which is more recent
 
         Args:
@@ -109,15 +110,14 @@ class KVS:
                 else, return -1
         """
         v_clock = self.context_store.get(key, self.new_context(self.replicas))[CLOCK]
-        if not clock:
-            return 1
         # Cj[i] = VC[i] - 1
         # Cj[k] >= VC[k] for k=i
-        elif v_clock[self.replica_index] != clock[self.replica_index] - 1 or True in [
+        if v_clock[self.replica_index] < clock[self.replica_index] - 1 or True in [
             v_clock[p] < clock[p]
             for p in range(self.replicas)
             if p != self.replica_index
         ]:
+            printer("Returning 1")
             return 1
         else:
             return -1
@@ -140,10 +140,9 @@ class KVS:
             keys = [key for key in keys if key in context_a and key in context_b]
         context = {}
         for key in keys:
-            clock_a, clock_b = context_a.get(key).get(CLOCK), context_b.get(key).get(
-                CLOCK
-            )
-            if clock_a and clock_b:
+            entry_a, entry_b = context_a.get(key), context_b.get(key)
+            if entry_a and entry_b:
+                clock_a, clock_b = entry_a[CLOCK], entry_b[CLOCK]
                 ts_a, ts_b = (
                     context_a.get(key)[TIMESTAMP],
                     context_b.get(key)[TIMESTAMP],
