@@ -1,0 +1,5 @@
+KEY = "key"
+VALUE = "value"
+TIMESTAMP = "last_write"
+CONTEXT = "context"
+CAUSE = "cause"
