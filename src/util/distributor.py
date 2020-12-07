@@ -493,8 +493,8 @@ class KVSDistributor:
                     context=context,
                 )
             else:
-                item.delete()
                 cause = [[key, entry[TIMESTAMP]] for key, entry in context]
+                item.delete(cause)
                 context.append([key, self.kvs.get(key).context()])
                 return DeleteResponse(
                     status_code=200,

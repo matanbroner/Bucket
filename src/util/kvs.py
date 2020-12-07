@@ -28,8 +28,9 @@ class KVSItem:
         self[TIMESTAMP] = last_write or time.time()
         self[CAUSE] = cause
 
-    def delete(self):
+    def delete(self, cause: list):
         self[DELETED] = True
+        self[CAUSE] = cause
         self[TIMESTAMP] = time.time()
 
     def json(self):
