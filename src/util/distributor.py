@@ -121,7 +121,7 @@ class KVSDistributor:
                     }]
                 ]
                 Each item in context is a two item list of [key, entry]. The entry portion stores the
-                last write timestamp when the key was read/written/deleted, whether the key is deleted,
+                last write timestamp when the key was written/deleted during the operation involving said key, whether the key is deleted,
                 and the causal writes which led to the key's last write. In this example, key "a" was written as a cause
                 of key "b" being written at 1594370977.537462.
 
@@ -236,10 +236,13 @@ class KVSDistributor:
 
     def _send_gossip(self):
         """Internal mechanism for sending updates between replicas"""
-        bucket = self.view.self_replication_bucket(own_ip=False)
-        url = "/kvs/gossip"
-        json = {KVS_TERM: self.kvs.json()}
-        self._request_multiple_ips(ips=bucket, url=url, method=PUT, json=json)
+        if self.view.includes_own_address():
+            bucket = self.view.self_replication_bucket(own_ip=False)
+            url = "/kvs/gossip"
+            json = {KVS_TERM: self.kvs.json()}
+            self._request_multiple_ips(ips=bucket, url=url, method=PUT, json=json)
+        else:
+            Scheduler.clear_jobs()
 
     # Public Functions
 
