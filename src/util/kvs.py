@@ -1,15 +1,21 @@
 import time
 from util.misc import printer
 from typing import NamedTuple
-from constants.terms import KEY, VALUE, TIMESTAMP, CAUSE, CONTEXT
+from constants.terms import KEY, VALUE, TIMESTAMP, CAUSE, CONTEXT, DELETED
 
 
 class KVSItem:
-    def __init__(self, value: str, last_write: float = None, cause: list = []):
+    def __init__(
+        self,
+        value: str,
+        last_write: float = None,
+        cause: list = [],
+        is_deleted: bool = False,
+    ):
         self[VALUE] = value
         self[TIMESTAMP] = last_write or time.time()
         self[CAUSE] = cause
-        self.is_deleted = False
+        self[DELETED] = is_deleted
 
     def __getitem__(self, key):
         return getattr(self, key)
@@ -22,18 +28,26 @@ class KVSItem:
         self[TIMESTAMP] = last_write or time.time()
         self[CAUSE] = cause
 
+    def delete(self):
+        self[DELETED] = True
+        self[TIMESTAMP] = time.time()
+
     def json(self):
         return {
             VALUE: self[VALUE],
             TIMESTAMP: self[TIMESTAMP],
             CAUSE: self[CAUSE],
+            DELETED: self[DELETED],
         }
 
     def context(self):
-        return {TIMESTAMP: self[TIMESTAMP], CAUSE: self[CAUSE]}
+        return {TIMESTAMP: self[TIMESTAMP], CAUSE: self[CAUSE], DELETED: self[DELETED]}
 
     def last_write(self):
         return self[TIMESTAMP]
+
+    def is_deleted(self):
+        return self[DELETED]
 
     def reset_context(self, timestamp: float = None):
         if not timestamp:
@@ -43,14 +57,17 @@ class KVSItem:
 
     @classmethod
     def from_json(cls, json: dict):
-        value, last_write, cause = (
+        value, last_write, cause, is_deleted = (
             json.get(VALUE),
             json.get(TIMESTAMP, time.time()),
             json.get(CAUSE, []),
+            json.get(DELETED, False),
         )
         if value == None:
             raise RuntimeError(f"Value not provided in {json}")
-        return cls(value=value, last_write=last_write, cause=cause)
+        return cls(
+            value=value, last_write=last_write, cause=cause, is_deleted=is_deleted
+        )
 
 
 class KVS:
@@ -67,26 +84,32 @@ class KVS:
         """Reset KVS"""
         self.kvs = {}
 
-    def json(self) -> dict:
+    def json(self, include_deleted=True) -> dict:
         """Return JSON serializable version of KVS
 
         Returns:
             dict: KVS underlying dict
         """
-        return {key: entry.json() for key, entry in self.kvs.items()}
-
-    def context(self) -> dict:
-        """Return valueless causal context of each key in KVS
-
-        Returns:
-            dict: key with dict value having keys and "timestamp"
-        """
-        return {key: entry.context() for key, entry in self.kvs.items()}
+        return (
+            {key: entry.json() for key, entry in self.kvs.items()}
+            if include_deleted
+            else {
+                key: entry.json()
+                for key, entry in self.kvs.items()
+                if not entry.is_deleted()
+            }
+        )
 
     def reset_context(self):
         timestamp = time.time()
-        for entry in self.kvs.values():
-            entry.reset_context(timestamp=timestamp)
+        to_delete = []
+        for key, entry in self.kvs.items():
+            if not entry.is_deleted():
+                entry.reset_context(timestamp=timestamp)
+            else:
+                to_delete.append(key)
+        for key in to_delete:
+            self.kvs.pop(key, None)
 
     def get(self, key, return_value=False):
         entry = self.kvs.get(key)
@@ -101,7 +124,8 @@ class KVS:
             key (str)
             value (str)
         """
-        inserted = key not in self.kvs
+        entry = self.kvs.get(key)
+        inserted = not entry or entry.is_deleted()
         self.kvs[key] = KVSItem(value, cause=cause)
         return inserted
 

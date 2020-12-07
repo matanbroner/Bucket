@@ -126,7 +126,7 @@ def shard_info(shard_id):
         return all_shards_info_response(all_shards)
 
 
-@kvs_router.route("/keys/<key>", methods=["GET", "PUT"])
+@kvs_router.route("/keys/<key>", methods=["GET", "PUT", "DELETE"])
 def dynamic_key_route(key):
     """Handles all key adding, updating, and deleting in KVS
 
@@ -150,6 +150,8 @@ def dynamic_key_route(key):
         res = kvs_distributor.get(key, context)
     elif request.method == "PUT":
         res = kvs_distributor.put(key, json.get("value"), context)
+    elif request.method == "DELETE":
+        res = kvs_distributor.delete(key, context)
 
     return res.to_flask_response(include_address=res.address != address)
 
