@@ -126,7 +126,7 @@ def shard_info(shard_id):
         return all_shards_info_response(all_shards)
 
 
-@kvs_router.route("/keys/<key>", methods=["GET", "PUT", "DELETE"])
+@kvs_router.route("/keys/<key>", methods=["GET", "PUT"])
 def dynamic_key_route(key):
     """Handles all key adding, updating, and deleting in KVS
 
@@ -141,10 +141,10 @@ def dynamic_key_route(key):
     """
     global address
     json = request.get_json() or {}
-    context = json.get("causal-context", {})
+    context = json.get("causal-context", [])
     # ensure we can handle an empty string or any other bad value for context
-    if not isinstance(context, dict):
-        context = {}
+    if not isinstance(context, list):
+        context = []
     res = None
     if request.method == "GET":
         res = kvs_distributor.get(key, context)

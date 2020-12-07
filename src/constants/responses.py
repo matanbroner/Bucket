@@ -71,7 +71,7 @@ def view_change_response(template: dict):
     Returns:
         tuple: json, status code
     """
-    return {"shards": template}, 200
+    return {"shards": template, "message": "View change successful"}, 200
 
 
 class GetResponse(typing.NamedTuple):
@@ -80,7 +80,7 @@ class GetResponse(typing.NamedTuple):
     """
 
     status_code: int = None
-    context: dict = {}
+    context: list = []
     address: str = None
     value: str = None
     message: str = None
@@ -153,7 +153,7 @@ class PutResponse(typing.NamedTuple):
     """
 
     status_code: int = None
-    context: dict = {}
+    context: list = []
     address: str = None
     message: str = None
     error: str = None

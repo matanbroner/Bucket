@@ -1,5 +1,6 @@
 KEY = "key"
 VALUE = "value"
-TIMESTAMP = "last_write"
+TIMESTAMP = "last-write"
 CONTEXT = "context"
 CAUSE = "cause"
+CAUSAL_CONTEXT = "causal-context"

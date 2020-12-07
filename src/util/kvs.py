@@ -5,12 +5,19 @@ from constants.terms import KEY, VALUE, TIMESTAMP, CAUSE, CONTEXT
 
 
 class KVSItem:
-    def __init__(self, value: str, last_write: float = None, cause: dict = {}):
+    def __init__(self, value: str, last_write: float = None, cause: list = []):
         self[VALUE] = value
         self[TIMESTAMP] = last_write or time.time()
         self[CAUSE] = cause
+        self.is_deleted = False
 
-    def update(self, key: str, value: str, last_write: float = None, cause: dict = {}):
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        return setattr(self, key, value)
+
+    def update(self, key: str, value: str, last_write: float = None, cause: list = []):
         self[VALUE] = value
         self[TIMESTAMP] = last_write or time.time()
         self[CAUSE] = cause
@@ -25,29 +32,30 @@ class KVSItem:
     def context(self):
         return {TIMESTAMP: self[TIMESTAMP], CAUSE: self[CAUSE]}
 
+    def last_write(self):
+        return self[TIMESTAMP]
+
     def reset_context(self, timestamp: float = None):
         if not timestamp:
             timestamp = time.time()
         self[TIMESTAMP] = timestamp
-        self[CAUSE] = {}
+        self[CAUSE] = []
 
-    @staticmethod
+    @classmethod
     def from_json(cls, json: dict):
         value, last_write, cause = (
             json.get(VALUE),
             json.get(TIMESTAMP, time.time()),
-            json.get(CAUSE, {}),
+            json.get(CAUSE, []),
         )
-        if not value:
-            raise RuntimeError(
-                f"Value not provided for last_write [{last_write}] and cause [{cause}]"
-            )
+        if value == None:
+            raise RuntimeError(f"Value not provided in {json}")
         return cls(value=value, last_write=last_write, cause=cause)
 
 
 class KVS:
-    def __init__(self, kvs: dict = {}):
-        self.kvs = kvs
+    def __init__(self):
+        self.kvs = {}
 
     def __iter__(self):
         return iter(self.kvs.items())
@@ -75,7 +83,7 @@ class KVS:
         """
         return {key: entry.context() for key, entry in self.kvs.items()}
 
-    def reset_context(self, key: str):
+    def reset_context(self):
         timestamp = time.time()
         for entry in self.kvs.values():
             entry.reset_context(timestamp=timestamp)
@@ -86,39 +94,23 @@ class KVS:
             return entry[VALUE] if return_value else entry
         return None
 
-    def insert(self, key: str, value: str, cause: dict = {}):
+    def upsert(self, key: str, value: str, cause: dict = []):
         """Insert new key-value pair into KVS
 
         Args:
             key (str)
             value (str)
         """
+        inserted = key not in self.kvs
         self.kvs[key] = KVSItem(value, cause=cause)
+        return inserted
 
-    def context_was_witnessed(self, context: {}) -> int:
-        """Compares two KVS entries for a key to determine which is more recent
-
-        Args:
-            key (str)
-            timestamp (float): latest write timestamp of entry
-
-        Returns:
-            int:
-                if passed in entry more recent, return 1
-                else, return -1
-        """
-        for key in context:
-            entry = self.kvs.get(key)
-            if not entry or entry[TIMESTAMP] < context[key][TIMESTAMP]:
-                return False
-        return True
-
-    @staticmethod
+    @classmethod
     def from_shard(cls, shard: dict):
-        kvs = cls()
+        instance = cls()
         for key, entry in shard.items():
-            self.kvs[key] = KVSItem.from_json(entry)
-        return kvs
+            instance.kvs[key] = KVSItem.from_json(entry)
+        return instance
 
     @classmethod
     def combine_conflicting_shards(cls, shard_a: dict, shard_b: dict):
@@ -133,12 +125,17 @@ class KVS:
         Returns:
             KVS: [description]
         """
-        kvs_a, kvs_b = cls(shard_a), cls(shard_b)
+        kvs_a, kvs_b = cls.from_shard(shard_a), cls.from_shard(shard_b)
         all_keys = set().union(shard_a.keys(), shard_b.keys())
-        for all_keys:
-            # mitigate any conflicts between keys existing in both kvs's
-            if kvs_a.compare(key, entry["timestamp"]) == 1:
-                kvs_a.kvs[key] = entry
-            if reset_clock:
-                kvs_a.reset_context(key, start_timestamp)
-        return kvs_a.json() if as_dict else kvs_a
+        final_shard = {}
+        for key in all_keys:
+            entry_a, entry_b = kvs_a.get(key), kvs_b.get(key)
+            if entry_a and entry_b:
+                final_shard[key] = (
+                    entry_a.json()
+                    if entry_a[TIMESTAMP] > entry_b[TIMESTAMP]
+                    else entry_b.json()
+                )
+            else:
+                final_shard[key] = entry_a.json() if entry_a else entry_b.json()
+        return final_shard

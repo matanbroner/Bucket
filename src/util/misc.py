@@ -1,5 +1,6 @@
 import sys
 import requests
+from constants.terms import TIMESTAMP, CAUSAL_CONTEXT
 
 
 def printer(msg: str):
@@ -42,7 +43,7 @@ def status_code_success(status_code: int) -> bool:
     return status_code >= 200 and status_code <= 300
 
 
-def get_request_first_success(responses: list) -> tuple:
+def get_request_most_recent(responses: list) -> tuple:
     """Returns response and IP of response in list with lowest status code
 
     Args:
@@ -51,14 +52,25 @@ def get_request_first_success(responses: list) -> tuple:
     Returns:
         tuple: response, IP address
     """
-    min_status_response = None, None
-    for response, ip in responses:
-        if (
-            min_status_response[0] == None
-            or response.status_code < min_status_response[0].status_code
-        ):
-            min_status_response = response, ip
-    return min_status_response
+
+    def get_last_write_from_success_response(response):
+        context = response.json().get(CAUSAL_CONTEXT)
+        last_read = context[-1]
+        return last_read[1].get(TIMESTAMP)
+
+    success_responses = [
+        response for response in responses if response[0].status_code == 200
+    ]
+    if len(success_responses):
+        sort_by_last_write = sorted(
+            success_responses,
+            key=lambda r: get_last_write_from_success_response(r[0]),
+            reverse=True,
+        )
+        return sort_by_last_write[0]
+    else:
+        sort_by_min_status = sorted(responses, key=lambda r: r[0].status_code)
+        return sort_by_min_status[0]
 
 
 def key_count_max(responses: list) -> int:
