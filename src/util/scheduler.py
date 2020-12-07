@@ -9,6 +9,8 @@ scheduler.start()
 
 
 class Scheduler:
+    """Interface for scheduling reocurring jobs"""
+
     scheduler = scheduler
     jobs = {}
 
@@ -38,7 +40,7 @@ class Scheduler:
         removal_condition: callable = None,
         id: str = None,
     ) -> str:
-        """Add a scheduled job in the background
+        """Add a scheduled job in the background. Deletes stale job if ID is currently present.
 
         Args:
             function (callable): function to run at each job execution
@@ -73,6 +75,7 @@ class Scheduler:
 
     @classmethod
     def clear_jobs(cls):
+        """Delete all jobs"""
         for job_id in cls.jobs:
             cls.jobs[job_id].remove()
         cls.jobs = {}
