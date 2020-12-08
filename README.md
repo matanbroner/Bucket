@@ -1,6 +1,7 @@
 # 🪣 Sharded KVS
 
 `UCSC CSE138 Fall 2020`
+</br>
 A causally consistent sharded key value store with reltively even distribution of keys per "bucket".
 
 # Mechanics
