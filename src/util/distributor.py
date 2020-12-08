@@ -8,21 +8,27 @@ from util.misc import (
     request,
     printer,
     status_code_success,
-    get_request_first_success,
+    get_request_most_recent,
     key_count_max,
 )
 from util.scheduler import Scheduler
 
 from constants.errors import (
-    INVALID_CAUSAL_CONTEXT,
+    UNABLE_TO_SATISFY,
     KEY_TOO_LONG,
     KEY_NOT_EXIST,
     VALUE_MISSING,
 )
-from constants.messages import GET_SUCCESS, PUT_NEW_SUCCESS, PUT_UPDATE_SUCCESS
-from constants.responses import GetResponse, PutResponse
+from constants.messages import (
+    GET_SUCCESS,
+    PUT_NEW_SUCCESS,
+    PUT_UPDATE_SUCCESS,
+    DELETE_SUCCESS,
+)
+from constants.terms import *
+from constants.responses import GetResponse, PutResponse, DeleteResponse
 
-GOSSIP_INTERVAL = 2
+GOSSIP_INTERVAL = 5
 
 
 class KVSDistributor:
@@ -70,7 +76,7 @@ class KVSDistributor:
                         (request(url_complete, method, headers, json[index]), ip)
                     )
                 except requests.exceptions.ConnectionError:
-                    printer(f"Connection error to IP: {ip}")
+                    # printer(f"Connection error to IP: {ip}")
                     pass
         return responses
 
@@ -101,21 +107,56 @@ class KVSDistributor:
         # TODO: Figure out if this use case needs to be handled...
         return None, None
 
-    def _causal_context_ahead(self, key: str, context: dict = {}) -> bool:
-        """Check if given causal context is ahead of local KVS for a given key
+    def _causal_context_ahead(self, key: str, context: list = []) -> bool:
+        """Checks if local context is behind given context when reading a key
 
         Args:
-            key (str)
-            context (dict, optional). Defaults to {}.
+            key (str): key being read in current request
+            context (list, optional): causal context passed in through client request. Defaults to [].
+                ex. [
+                    ["a", {
+                        "cause": [["b", 1594370977.537462]],
+                        "deleted": false,
+                        "last-write": 1607370977.5734642
+                    }]
+                ]
+                Each item in context is a two item list of [key, entry]. The entry portion stores the
+                last write timestamp when the key was written/deleted during the operation involving said key, whether the key is deleted,
+                and the causal writes which led to the key's last write. In this example, key "a" was written as a cause
+                of key "b" being written at 1594370977.537462.
 
         Returns:
-            bool: True if given context is ahead of local context
+            bool: is passed in context ahead
+
+
         """
-        key_context = context.get(key)
-        if not key_context:
-            # context not aware of key
+
+        for _, context_entry in context:
+            cause = context_entry[CAUSE]
+            for causal_key, key_ts in cause:
+                # get each causal key in each item of the given context
+                bucket_id = self._assign_key_bucket(key)
+                if self.view.is_own_bucket_index(bucket_id):
+                    if (
+                        # key not in KVS, node cannot provide a value
+                        not self.kvs.get(causal_key)
+                        # key's ts in kvs behind expected event
+                        or self.kvs.get(causal_key).last_write() < key_ts
+                    ):
+                        return True
+                else:
+                    # query another bucket for key's last write ts
+                    foreign_response = self.get(key)
+                    # cannot provide the event either because foreign shard has partition or node down
+                    if (
+                        # if no success responses
+                        foreign_response.status_code != 200
+                        or foreign_response.json()
+                        # or node gets a timestamp behind the one being checked
+                        .get(CAUSAL_CONTEXT).get(key).get(TIMESTAMP) < key_ts
+                    ):
+                        return True
             return False
-        return self.kvs.compare(key, key_context["timestamp"]) == 1
 
     def _assign_key_bucket(self, key: str, num_buckets: int = None) -> int:
         """Determines which replica bucket is assigned a key based on number of buckets and Murmurhash
@@ -165,9 +206,9 @@ class KVSDistributor:
         """
         return [
             {
-                "shard-id": index,
-                "key_count": len(bucket_shards[index]),
-                "replicas": self.view.buckets[index],
+                SHARD_ID: index,
+                KEY_COUNT: len(bucket_shards[index]),
+                REPLICAS: self.view.buckets[index],
             }
             for index, _ in enumerate(bucket_shards)
         ]
@@ -184,29 +225,26 @@ class KVSDistributor:
         return isinstance(key, str) and len(key) <= 50
 
     def _start_gossiping(self):
+        """Initiate repeating gossip protocol"""
         if self.view.repl_factor > 1:
+            # should not gossip if one replica per shard
             Scheduler.add_job(
                 function=self._send_gossip,
                 seconds=GOSSIP_INTERVAL,
-                id="send_gossip",
+                id=GOSSIP_ID,
             )
 
     def _send_gossip(self):
-        bucket = self.view.self_replication_bucket(own_ip=False)
-        url = "/kvs/gossip"
-        json = {"kvs": self.kvs.json()}
-        self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
+        """Internal mechanism for sending updates between replicas"""
+        if self.view.includes_own_address():
+            bucket = self.view.self_replication_bucket(own_ip=False)
+            url = "/kvs/gossip"
+            json = {KVS_TERM: self.kvs.json()}
+            self._request_multiple_ips(ips=bucket, url=url, method=PUT, json=json)
+        else:
+            Scheduler.clear_jobs()
 
     # Public Functions
-
-    def merge_gossip(self, shard: dict):
-        """Accepts gossip from replicas in same bucket
-
-        Args:
-            shard (dict): key-value structure
-        """
-        kvs_dict = self.kvs.json()
-        self.kvs = self.kvs.combine_conflicting_shards(kvs_dict, shard, as_dict=False)
 
     def change_view(self, ips: list, repl_factor: int, propagate: bool = False) -> dict:
         """Public interface for a view change
@@ -237,36 +275,38 @@ class KVSDistributor:
             # note that there will be duplicate shards, but we do this
             # to mitigate potential missed gossip between nodes in buckets
             url = "/kvs/view-change-propagate"
-            json = {"view": ips, "repl-factor": repl_factor}
+            json = {VIEW: ips, REPL_FACTOR: repl_factor}
             shards = [
-                response.json().get("kvs")
+                response.json().get(KVS_TERM)
                 for response, _ in self._request_multiple_ips(
-                    ips=ips_union, url=url, method="PUT", json=json
+                    ips=ips_union, url=url, method=PUT, json=json
                 )
                 if status_code_success(response.status_code)
             ]
-            # use a mitigation function to combine all shards
-            # this function will pick a more recent value in an identical key conflict
 
             # include own shard
             shards.append(self.kvs.json())
             for shard in shards:
                 if isinstance(shard, dict):
-                    central_kvs = KVS.combine_conflicting_shards(
-                        central_kvs, shard, reset_clock=True, as_dict=True
-                    )
+                    # use a mitigation function to combine all shards
+                    # this function will pick a more recent value in an identical key conflict
+                    central_kvs = KVS.combine_conflicting_shards(central_kvs, shard)
+            central_kvs = KVS.from_shard(central_kvs)
+            # remove contexts and delete needed keys
+            central_kvs.reset_context()
             # assign new shard to each bucket
-            bucket_shards = self._shard_keys(central_kvs)
+            bucket_shards = self._shard_keys(central_kvs.json(include_deleted=False))
             for shard, bucket in zip(bucket_shards, self.view.buckets):
                 # send each node in each bucket its shard
                 # prevents need for immediate gossip
                 url = "/kvs/shard"
-                json = {"kvs": shard}
+                json = {KVS_TERM: shard}
                 # if a node fails to get the shard, gossip will handle it
-                self._request_multiple_ips(ips=bucket, url=url, method="PUT", json=json)
+                self._request_multiple_ips(ips=bucket, url=url, method=PUT, json=json)
 
             # set own shard
-            self.kvs = KVS(bucket_shards[self.view.bucket_index])
+            if self.view.address in self.view.all_ips:
+                self.kvs = KVS.from_shard(bucket_shards[self.view.bucket_index])
 
             # generate return template
             return_template = self._generate_replica_template(bucket_shards)
@@ -278,7 +318,19 @@ class KVSDistributor:
         Args:
             shard (dict): key-value pairs
         """
-        self.kvs = KVS(shard)
+        self.kvs = KVS.from_shard(shard)
+        # remove all context from shard, since context not persisted between views
+        self.kvs.reset_context()
+
+    def merge_gossip(self, shard: dict):
+        """Accepts gossip from replicas in same bucket
+
+        Args:
+            shard (dict): key-value structure
+        """
+        kvs_dict = self.kvs.json()
+        combined = KVS.combine_conflicting_shards(kvs_dict, shard)
+        self.kvs = KVS.from_shard(combined)
 
     def key_count(self, bucket_index: int = None) -> int:
         """Returns number of keys in KVS
@@ -288,11 +340,11 @@ class KVSDistributor:
             int
         """
         if bucket_index == None or bucket_index == self.view.bucket_index:
-            return len(self.kvs.json())
+            return len(self.kvs.json(include_deleted=False))
         else:
             url = "/kvs/key-count"
             bucket = self.view.buckets[bucket_index]
-            responses = self._request_multiple_ips(ips=bucket, url=url, method="GET")
+            responses = self._request_multiple_ips(ips=bucket, url=url, method=GET)
             return key_count_max(responses)
 
     def shard_id(self) -> int:
@@ -320,12 +372,13 @@ class KVSDistributor:
         """
         return [id for id, _ in enumerate(self.view.buckets)]
 
-    def get(self, key: str, context: str = {}) -> GetResponse:
+    def get(self, key: str, context: list = []) -> GetResponse:
         """Public interface for completing GET requests
 
         Args:
             key (str)
-            context (str, optional): causal context. Defaults to {}.
+            context (list, optional): causal context. Defaults to [].
+                ex. See _causal_context_ahead for structure of context
 
         Returns:
             GetResponse
@@ -333,17 +386,19 @@ class KVSDistributor:
         bucket_index = self._assign_key_bucket(key)
         if self.view.is_own_bucket_index(bucket_index):
             # given context is ahead of local KVS
+            # check context first to allow for deleted keys to
+            # be checked for causality errors
             if self._causal_context_ahead(key, context):
                 return GetResponse(
                     status_code=400,
                     value=None,
                     context=context,
                     address=self.view.address,
-                    error=INVALID_CAUSAL_CONTEXT,
+                    error=UNABLE_TO_SATISFY,
                 )
             entry = self.kvs.get(key)
             # key not in local KVS
-            if not entry:
+            if not entry or entry.is_deleted():
                 return GetResponse(
                     status_code=404,
                     value=None,
@@ -352,10 +407,11 @@ class KVSDistributor:
                     error=KEY_NOT_EXIST,
                 )
             # successful fetch
+            context.append([key, self.kvs.get(key).context()])
             return GetResponse(
                 status_code=200,
-                value=entry["value"],
-                context=self.kvs.context(),
+                value=entry[VALUE],
+                context=context,
                 address=self.view.address,
                 error=None,
                 message=GET_SUCCESS,
@@ -364,35 +420,34 @@ class KVSDistributor:
             # proxy request to another bucket
             bucket = self.view.buckets[bucket_index]
             url = f"/kvs/keys/{key}"
-            json = {"causal-context": context}
+            json = {CAUSAL_CONTEXT: context}
             responses = self._request_multiple_ips(
-                ips=bucket, url=url, method="GET", json=json
+                ips=bucket, url=url, method=GET, json=json
             )
-            # ensures that a 200 can be obtained even if not all replicas have a value yet
-            best_reponse = get_request_first_success(responses)
-            if best_reponse[0] != None:
-                return GetResponse.from_flask_response(
-                    best_reponse[0], manual_address=best_reponse[1]
+            if not len(responses):
+                # if entire bucket fails to respond, unlikely use case
+                return GetResponse(
+                    status_code=503,
+                    value=None,
+                    context=context,
+                    address=self.view.address,
+                    error=UNABLE_TO_SATISFY,
                 )
-            # if entire bucket fails to respond, unlikely use case
-            return GetResponse(
-                status_code=503,
-                value=None,
-                context=context,
-                address=self.view.address,
-                error=INVALID_CAUSAL_CONTEXT,
-            )
+            # ensures that a 200 can be obtained even if not all replicas have a value yet
+            best_reponse, ip = get_request_most_recent(responses)
+            return GetResponse.from_flask_response(best_reponse, manual_address=ip)
 
-    def put(self, key: str, value: str = None, context: dict = {}) -> PutResponse:
+    def put(self, key: str, value: str = None, context: list = []) -> PutResponse:
         """Public interface for completing PUT requests
 
         Args:
             key (str)
             value (str)
-            context (str, optional): causal context. Defaults to {}.
+            context (list, optional): causal context. Defaults to [].
+                ex. See _causal_context_ahead for structure of context
 
         Returns:
-            GetResponse
+            PutResponse
         """
         bucket_index = self._assign_key_bucket(key)
         if self.view.is_own_bucket_index(bucket_index):
@@ -412,32 +467,30 @@ class KVSDistributor:
                     address=self.view.address,
                     context=context,
                 )
-            entry = self.kvs.get(key)
-            if entry:
-                # update key-value
-                self.kvs.update(key, value)
-                return PutResponse(
-                    status_code=200,
-                    context=self.kvs.context(),
-                    address=self.view.address,
-                    message=PUT_UPDATE_SUCCESS,
-                )
-            else:
-                # insert key-value
-                self.kvs.insert(key, value)
+            cause = self.kvs.create_cause_from_context(context)
+            inserted = self.kvs.upsert(key, value, cause)
+            context.append([key, self.kvs.get(key).context()])
+            if inserted:
                 return PutResponse(
                     status_code=201,
-                    context=self.kvs.context(),
+                    context=context,
                     address=self.view.address,
                     message=PUT_NEW_SUCCESS,
+                )
+            else:
+                return PutResponse(
+                    status_code=200,
+                    context=context,
+                    address=self.view.address,
+                    message=PUT_UPDATE_SUCCESS,
                 )
         else:
             # proxy request to another bucket
             bucket = self.view.buckets[bucket_index]
             url = f"/kvs/keys/{key}"
-            json = {"causal-context": context, "value": value}
+            json = {CAUSAL_CONTEXT: context, VALUE: value}
             proxy_response, ip = self._request_bucket(
-                bucket=bucket, url=url, method="PUT", json=json
+                bucket=bucket, url=url, method=PUT, json=json
             )
             if proxy_response != None:
                 return PutResponse.from_flask_response(
@@ -448,5 +501,58 @@ class KVSDistributor:
                 status_code=503,
                 context=context,
                 address=self.view.address,
-                error=INVALID_CAUSAL_CONTEXT,
+                error=UNABLE_TO_SATISFY,
+            )
+
+    def delete(self, key: str, context: list = []):
+        """Public interface for completing DELETE requests
+
+        Args:
+            key (str)
+            context (list, optional): causal context. Defaults to [].
+                ex. See _causal_context_ahead for structure of context
+
+        Returns:
+            DeleteResponse
+        """
+        bucket_index = self._assign_key_bucket(key)
+        if self.view.is_own_bucket_index(bucket_index):
+            item = self.kvs.get(key)
+            if not item or item.is_deleted():
+                return DeleteResponse(
+                    status_code=404,
+                    error=KEY_NOT_EXIST,
+                    address=self.view.address,
+                    context=context,
+                )
+            else:
+                cause = self.kvs.create_cause_from_context(context)
+                # deletes are essentially write operations, update
+                # causal context when deleting a key
+                item.delete(cause)
+                context.append([key, self.kvs.get(key).context()])
+                return DeleteResponse(
+                    status_code=200,
+                    message=DELETE_SUCCESS,
+                    address=self.view.address,
+                    context=context,
+                )
+        else:
+            # proxy request to another bucket
+            bucket = self.view.buckets[bucket_index]
+            url = f"/kvs/keys/{key}"
+            json = {CAUSAL_CONTEXT: context}
+            proxy_response, ip = self._request_bucket(
+                bucket=bucket, url=url, method=DELETE, json=json
+            )
+            if proxy_response != None:
+                return DeleteResponse.from_flask_response(
+                    proxy_response, manual_address=ip
+                )
+            # if entire bucket fails to respond, unlikely use case
+            return DeleteResponse(
+                status_code=503,
+                context=context,
+                address=self.view.address,
+                error=UNABLE_TO_SATISFY,
             )

@@ -35,7 +35,12 @@ class View:
         """
         return len(self.buckets)
 
-    def includes_own_address(self):
+    def includes_own_address(self) -> bool:
+        """Is node's address in current view
+
+        Returns:
+            bool
+        """
         return self.address in self.all_ips
 
     def is_own_bucket_index(self, index: int) -> bool:
