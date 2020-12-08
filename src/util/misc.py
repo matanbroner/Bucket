@@ -1,6 +1,6 @@
 import sys
 import requests
-from constants.terms import TIMESTAMP, CAUSAL_CONTEXT
+from constants.terms import *
 
 
 def printer(msg: str):
@@ -14,7 +14,7 @@ def printer(msg: str):
 
 def request(
     url: str,
-    method: str = "GET",
+    method: str = GET,
     headers: dict = {},
     json: dict = {},
 ) -> requests.Response:
@@ -95,7 +95,7 @@ def key_count_max(responses: list) -> int:
     max_count = 0
     for response, _ in responses:
         json = response.json() or {}
-        if json.get("key-count"):
-            max_count = max(max_count, int(json.get("key-count")))
+        if json.get(KEY_COUNT):
+            max_count = max(max_count, int(json.get(KEY_COUNT)))
 
     return max_count
