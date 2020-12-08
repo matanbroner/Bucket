@@ -62,6 +62,7 @@ class gossip_test(unittest.TestCase):
         self.assertEqual(contents["doesExist"], True)
         self.assertEqual(response.status_code, 200)
 
+        #Might have an error here. Need to check logic
         response = self.get_request("13804",  "y1", ct2)
         contents=response.json()
         self.assertEqual(contents["message"], get_error_msg)
