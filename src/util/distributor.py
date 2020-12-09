@@ -156,7 +156,7 @@ class KVSDistributor:
                         .get(CAUSAL_CONTEXT).get(key).get(TIMESTAMP) < key_ts
                     ):
                         return True
-            return False
+        return False
 
     def _assign_key_bucket(self, key: str, num_buckets: int = None) -> int:
         """Determines which replica bucket is assigned a key based on number of buckets and Murmurhash
