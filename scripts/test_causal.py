@@ -101,7 +101,7 @@ class causal_test(unittest.TestCase):
         contents = response.json()
         c2 = contents["causal-context"]
         print("C2 context after reads a from R1:", c2)
-        print("Y R2 value:", contents["value"])
+        print("A R1 value:", contents["value"])
         self.assertEqual(response.status_code, 200)
 
         # C1 Writes b to R1
@@ -123,6 +123,7 @@ class causal_test(unittest.TestCase):
         contents = response.json()
         c2 = contents["causal-context"]
         print("C2 context after read c from R1:", c2)
+        print("C R1 value:", contents["value"])
         self.assertEqual(response.status_code, 503)
 
 if __name__ == "__main__":
