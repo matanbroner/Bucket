@@ -172,6 +172,7 @@ class causal_test(unittest.TestCase):
         c2 = contents["causal-context"]
         print("C2 context after read Y from R2:", c2)
         print("Y R2 value:", contents["value"])
+        #Unsure if 200 or 400
         self.assertEqual(response.status_code, 200)
         
 if __name__ == "__main__":
