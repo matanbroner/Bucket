@@ -61,14 +61,14 @@ class causal_test(unittest.TestCase):
         response = self.get_request("13801", "y", c2)
         contents = response.json()
         c2= contents["causal-context"] 
-        print ("Context C1:",c1)
+        print ("Context C2:",c2)
         print ("\nvalue:",contents["value"])
         print ("\n")
         #C1 Reads Y from R2
         response = self.get_request("13802", "y", c1)
         contents = response.json()
         c1= contents["causal-context"] 
-        print ("Context C2",c2)
+        print ("Context C1",c1)
         print ("\nvalue:",contents["value"])
         print ("\n")
 
