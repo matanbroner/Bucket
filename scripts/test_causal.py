@@ -33,63 +33,47 @@ class causal_test(unittest.TestCase):
         )
 
     def test_causal_1(self):
-        response = self.put_request("13801", "x", "0", "")
-        # Write X to R1
+        #C1 Writes X to R1
         response = self.put_request("13801", "x", "1", "")
         contents = response.json()
-        self.assertEqual(contents["message"], update_resp)
+        c1= contents["causal-context"] 
         self.assertEqual(response.status_code, 200)
-        # Read X from R2 with causal-context from prev write. Should Result in error
-        response = self.get_request("13802", "x", contents["causal-context"])
-        contents2 = response.json()
-        self.assertEqual(contents2["message"], get_error_msg)
-        self.assertEqual(contents2["error"], unable_error_resp)
-        self.assertEqual(response.status_code, 400)
-
-    # only works on first run since Y will exist
-    def test_causal_2(self):
-        response = self.put_request("13801", "y", "0", "")
-        # Write X to R1
-        response = self.put_request("13801", "y", "1", "")
+        #C2 Writes X to R2
+        response = self.put_request("13802", "x", "2", "")
         contents = response.json()
-        self.assertEqual(contents["message"], update_resp)
+        c2= contents["causal-context"] 
         self.assertEqual(response.status_code, 200)
-        # Read X from R2 without causal-context. Should Result in key DNE
-        response = self.get_request("13802", "y", "")
-        contents2 = response.json()
-        self.assertEqual(contents2["message"], get_error_msg)
-        self.assertEqual(contents2["error"], get_error_resp)
-        self.assertEqual(contents2["doesExist"], False)
-        self.assertEqual(response.status_code, 404)
-
-
-    def test_causal_3(self):
-        #Wait so that Y exists on nodes, so msg will be updated not added
-        time.sleep(3)
-        #C1 writes y=test1 to R1
-        response = self.put_request("13801", "y", "test1", "")
+        #C1 Writes Y to R1
+        response = self.put_request("13801", "y", "1", c1)
         contents = response.json()
-        self.assertEqual(contents["message"], update_resp)
+        c1= contents["causal-context"] 
         self.assertEqual(response.status_code, 200)
-        c1= contents["causal-context"]
-        #C2 writes y=test2 to R2
-        response = self.put_request("13802", "y", "test2", "")
+        #C2 Writes Y to R2
+        response = self.put_request("13802", "y", "2", c2)
         contents = response.json()
-        self.assertEqual(contents["message"], update_resp)
+        c2= contents["causal-context"] 
         self.assertEqual(response.status_code, 200)
-        c2= contents["causal-context"]
-        #C1 reads from R2
-        response = self.get_request("13802", "y", c1)
-        contents = response.json()
-        self.assertEqual(contents["message"], get_resp)
-        self.assertEqual(contents["value"], "test2")
-        self.assertEqual(response.status_code, 200)
-        #C2 reads from R1
+        print ("Context C1:",c1)
+        print ("\n")
+        print ("Context C2",c2)
+        print ("\n")
+        #C2 Reads Y from R1
         response = self.get_request("13801", "y", c2)
         contents = response.json()
-        self.assertEqual(contents["message"], get_error_msg)
-        self.assertEqual(contents["error"], unable_error_resp)
-        self.assertEqual(response.status_code, 400)
+        c2= contents["causal-context"] 
+        print ("Context C1:",c1)
+        print ("\nvalue:",contents["value"])
+        print ("\n")
+        #C1 Reads Y from R2
+        response = self.get_request("13802", "y", c1)
+        contents = response.json()
+        c1= contents["causal-context"] 
+        print ("Context C2",c2)
+        print ("\nvalue:",contents["value"])
+        print ("\n")
+
+
+
         
 if __name__ == "__main__":
     unittest.main()
