@@ -82,6 +82,7 @@ class causal_test(unittest.TestCase):
     |       |<-----|
     |  b=1  |      |
     |-----> |      |
+    |       |      |
     |  c=1  |      |
     |-----> |  R(c)|
     |       |<-----|
@@ -126,5 +127,52 @@ class causal_test(unittest.TestCase):
         print("C R1 value:", contents["value"])
         self.assertEqual(response.status_code, 200)
 
+
+    def test_causal_3(self):
+        print ("\nTEST 3")
+        # C1 Writes X to R1
+        response = self.put_request("13801", "x", "1", "")
+        contents = response.json()
+        c1 = contents["causal-context"]
+        print("C1 context after write x=1 to R1:", c1)
+        self.assertTrue(200 <= response.status_code <= 201)
+
+        # C2 Writes X to R2
+        response = self.put_request("13802", "x", "2", "")
+        contents = response.json()
+        c2 = contents["causal-context"]
+        print("C2 context after write x=2 to R2:", c2)
+        self.assertTrue(200 <= response.status_code <= 201)
+
+        # C1 Writes Y to R2
+        response = self.put_request("13802", "y", "1", c1)
+        contents = response.json()
+        c1 = contents["causal-context"]
+        print("C1 context after write y=1 to R1:", c1)
+        self.assertTrue(200 <= response.status_code <= 201)
+
+        # C2 Writes Y to R1
+        response = self.put_request("13801", "y", "2", c2)
+        contents = response.json()
+        c2 = contents["causal-context"]
+        print("C2 context after write y=2 to R2:", c2)
+        self.assertTrue(200 <= response.status_code <= 201)
+
+        # C1 Reads Y from R1
+        response = self.get_request("13801", "y", c1)
+        contents = response.json()
+        c1 = contents["causal-context"]
+        self.assertEqual(response.status_code, 200)
+        print("C1 context after read Y from R1:", c1)
+        print("Y R1 value:", contents["value"])
+
+        # C2 Reads Y from R2, should get causal error due to writing x second
+        response = self.get_request("13802", "y", c2)
+        contents = response.json()
+        c2 = contents["causal-context"]
+        print("C2 context after read Y from R2:", c2)
+        print("Y R2 value:", contents["value"])
+        self.assertEqual(response.status_code, 200)
+        
 if __name__ == "__main__":
     unittest.main()
