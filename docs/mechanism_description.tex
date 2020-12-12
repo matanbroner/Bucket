@@ -60,15 +60,17 @@ Clients are able to communicate with the key-value store through a dedicated API
 	\end{verbatim}
 	Allows a client to query the number of key-value pairs stored at a given node in the network.
 	\item View change:
-	\item \begin{verbatim}
+	\begin{verbatim}
 		/kvs/view-change
 	\end{verbatim}
 	Allows a client to inform the network of a change in "view", meaning that the current set of active nodes in the network has been changed.
-	\item \begin{verbatim}
+	\item General shard information:
+	\begin{verbatim}
 		/kvs/shards
 	\end{verbatim}
 	Retrieves information for all shards in the KVS. Response contains the id of all shards.
-	\item \begin{verbatim}
+	\item Shard specific information:
+	\begin{verbatim}
 		/kvs/shards/<id>
 	\end{verbatim}
 	Retrieves information for a specific shard. Returns the number of keys and which replica it is stored on.
