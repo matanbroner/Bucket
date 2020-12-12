@@ -64,6 +64,14 @@ Clients are able to communicate with the key-value store through a dedicated API
 		/kvs/view-change
 	\end{verbatim}
 	Allows a client to inform the network of a change in "view", meaning that the current set of active nodes in the network has been changed.
+	\item \begin{verbatim}
+		/kvs/shards
+	\end{verbatim}
+	Retrieves information for all shards in the KVS. Response contains the id of all shards.
+	\item \begin{verbatim}
+		/kvs/shards/<id>
+	\end{verbatim}
+	Retrieves information for a specific shard. Returns the number of keys and which replica it is stored on.
 \end{enumerate}
 \section{Causal Consistency}
 Causal consistency states that all causally related operations should be read in the same order across a system. The following are guaranteed by causal consistency:
