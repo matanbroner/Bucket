@@ -1,4 +1,3 @@
 Name                Contribution
 Matan Broner        Reworked KVS Distributor, created causal consitency structures through numerous iterations, worked on API design
 Krshant Chettiar    Worked on design for API, designed robust test suite for numerous use cases, documentation of mechanism
-Kenneth Tang        (Joined group late) Worked on unit tests for system
