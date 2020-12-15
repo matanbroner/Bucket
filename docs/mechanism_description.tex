@@ -22,8 +22,6 @@
   Matan Broner\\
   \and
   Krshant Chettiar\\
-  \and 
-  Kenneth Tang
 }
 \date{12/11/2020}
 
@@ -107,18 +105,18 @@ A brief description of requests that affect causality in the KVS.
 \begin{enumerate}
 \item{PUT and DELETE Requests}
 \newline
-Any client regardless of its causal context can make a successful PUT or DELETE request as all requests that modify data are made later than any that node has witnessed.  For DELETE requests to work successfully, a field in the causal-context data structure. The “deleted” field as implied by its name, keeps track of whether a value has been deleted or not. This field is required even events that have been deleted still may be relevant when relating events causally. 
+Any client regardless of its causal context can make a successful PUT or DELETE request as all requests that modify data are made later than any that node has witnessed.  For DELETE requests to work successfully, a field in the causal-context data structure. The 'deleted' field as implied by its name, keeps track of whether a value has been deleted or not. This field is required even events that have been deleted still may be relevant when relating events causally. 
 
 \item{GET Request}
 \newline
 For a GET request to be successful, it either needs to have no causal-context (not witnessed any events) or it needs to have causal-context that is later than that of the key-value it is trying to read. If a client has causal-context that has knowledge of all earlier events, it is successfully able to read. If it does not have knowledge of earlier events, the node responds with “Unable to satisfy request”. If a client has the proper causal-context required to read a value and if a node must act as a proxy, it will always get back the latest value for a given key even if gossiping has not yet occurred.
 \end{enumerate}
 \makebox[\linewidth]{
-  \includegraphics[keepaspectratio=true,scale=0.5]{assets/causal.jpeg}}
+  \includegraphics[keepaspectratio=true,scale=0.5]{assets/causal.jpg}}
 \section{Eventual Consistency}
 When there are no network partitions, all replicas should converge to newest, correct state. To do this, a gossip protocol must be implemented for replicas to exchange state. A scheduler is used to ensure gossiping between nodes and replicas occur every 5 seconds. If a node and its corresponding replica have different states for the same key, both will have to agree and end up with the same final state. To do this, the state with the latest causal context is used or in the case of concurrent events, the key with the latest last write is chosen.
 \makebox[\linewidth]{
-  \includegraphics[keepaspectratio=true,scale=0.5]{assets/gossip.jpeg}}
+  \includegraphics[keepaspectratio=true,scale=0.5]{assets/gossip.jpg}}
 \section{Unit Testing}
 Aside from using the provided test scripts from the course TA, our group created  python scripts to test causality and gossiping with various node and replication factor configurations. 
 
